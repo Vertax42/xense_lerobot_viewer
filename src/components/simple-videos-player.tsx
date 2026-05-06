@@ -377,7 +377,7 @@ export const SimpleVideosPlayer = ({
                   isEnlarged ? "max-h-[90vh] max-w-[90vw]" : ""
                 }`}
                 muted
-                preload="auto"
+                preload="metadata"
                 crossOrigin="anonymous"
               >
                 <source src={proxyHfUrl(info.url)} type="video/mp4" />

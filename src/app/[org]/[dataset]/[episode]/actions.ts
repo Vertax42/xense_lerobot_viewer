@@ -2,6 +2,7 @@
 
 import { getDatasetVersionAndInfo } from "@/utils/versionUtils";
 import type { DatasetMetadata } from "@/utils/parquetUtils";
+import { repoIdFromRouteParams } from "@/utils/datasetRoute";
 import {
   loadAllEpisodeLengthsV3,
   loadAllEpisodeFrameInfo,
@@ -16,7 +17,7 @@ export async function fetchEpisodeLengthStats(
   org: string,
   dataset: string,
 ): Promise<EpisodeLengthStats | null> {
-  const repoId = `${org}/${dataset}`;
+  const repoId = repoIdFromRouteParams(org, dataset);
   const { version, info } = await getDatasetVersionAndInfo(repoId);
   if (version !== "v3.0") return null;
   return loadAllEpisodeLengthsV3(repoId, version, info.fps);
@@ -26,7 +27,7 @@ export async function fetchEpisodeFrames(
   org: string,
   dataset: string,
 ): Promise<EpisodeFramesData> {
-  const repoId = `${org}/${dataset}`;
+  const repoId = repoIdFromRouteParams(org, dataset);
   const { version, info } = await getDatasetVersionAndInfo(repoId);
   return loadAllEpisodeFrameInfo(
     repoId,
@@ -39,7 +40,7 @@ export async function fetchCrossEpisodeVariance(
   org: string,
   dataset: string,
 ): Promise<CrossEpisodeVarianceData | null> {
-  const repoId = `${org}/${dataset}`;
+  const repoId = repoIdFromRouteParams(org, dataset);
   const { version, info } = await getDatasetVersionAndInfo(repoId);
   return loadCrossEpisodeActionVariance(
     repoId,
@@ -54,7 +55,7 @@ export async function fetchEpisodeChartData(
   dataset: string,
   episodeId: number,
 ): Promise<Record<string, number>[]> {
-  const repoId = `${org}/${dataset}`;
+  const repoId = repoIdFromRouteParams(org, dataset);
   const { version, info } = await getDatasetVersionAndInfo(repoId);
   return loadEpisodeFlatChartData(
     repoId,

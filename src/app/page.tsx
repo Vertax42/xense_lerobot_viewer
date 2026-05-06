@@ -5,6 +5,11 @@ import { useRouter } from "next/navigation";
 import { useSearchParams } from "next/navigation";
 import { authHeaders } from "@/utils/auth";
 import HfAuthButton from "@/components/hf-auth-button";
+import {
+  encodeLocalDatasetPath,
+  isAbsoluteDatasetPath,
+  normalizeDatasetPathInput,
+} from "@/utils/datasetRoute";
 
 export default function Home() {
   return (
@@ -123,7 +128,12 @@ function HomeInner() {
   const navigate = useCallback(
     (value: string) => {
       setShowSuggestions(false);
-      router.push(value);
+      const normalized = normalizeDatasetPathInput(value.trim());
+      if (isAbsoluteDatasetPath(normalized)) {
+        router.push(`/_local/${encodeLocalDatasetPath(normalized)}`);
+        return;
+      }
+      router.push(normalized);
     },
     [router],
   );
@@ -209,7 +219,7 @@ function HomeInner() {
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={handleKeyDown}
               onFocus={() => query.trim() && setShowSuggestions(true)}
-              placeholder="Enter dataset id (e.g. lerobot/pusht)"
+              placeholder="Enter dataset id or local path"
               className="pl-10 pr-4 py-2.5 rounded-md text-base text-white bg-white/10 backdrop-blur-sm border border-white/30 focus:outline-none focus:border-cyan-400 focus:bg-white/15 w-[380px] shadow-md placeholder:text-white/40 transition-colors"
               autoComplete="off"
             />

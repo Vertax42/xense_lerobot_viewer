@@ -5,6 +5,7 @@ import type {
   EpisodeLengthStats,
   CameraInfo,
 } from "@/app/[org]/[dataset]/[episode]/fetch-data";
+import { getDisplayNameForRepoId } from "@/utils/datasetRoute";
 
 interface StatsPanelProps {
   datasetInfo: DatasetDisplayInfo;
@@ -117,6 +118,7 @@ function StatsPanel({
   loading,
 }: StatsPanelProps) {
   const els = episodeLengthStats;
+  const datasetDisplayName = getDisplayNameForRepoId(datasetInfo.repoId);
 
   return (
     <div className="max-w-4xl mx-auto py-6 space-y-8">
@@ -124,7 +126,7 @@ function StatsPanel({
         <h2 className="text-xl text-slate-100">
           <span className="font-bold">Dataset Statistics:</span>{" "}
           <span className="font-normal text-slate-400">
-            {datasetInfo.repoId}
+            {datasetDisplayName}
           </span>
         </h2>
       </div>

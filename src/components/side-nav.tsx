@@ -3,6 +3,7 @@
 import Link from "next/link";
 import React, { useMemo, useState } from "react";
 import { useFlaggedEpisodes } from "@/context/flagged-episodes-context";
+import { routePathFromRepoId } from "@/utils/datasetRoute";
 
 import type { DatasetDisplayInfo } from "@/app/[org]/[dataset]/[episode]/fetch-data";
 
@@ -117,7 +118,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 ) : (
                   <div className={itemClass}>
                     <Link
-                      href={`./episode_${episode}`}
+                      href={routePathFromRepoId(datasetInfo.repoId, episode)}
                       className="flex-1 text-left"
                     >
                       Episode {episode}

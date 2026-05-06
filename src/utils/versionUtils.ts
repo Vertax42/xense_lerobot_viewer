@@ -3,6 +3,11 @@
  */
 
 import { authHeaders } from "./auth";
+import {
+  getLocalDatasetFileBase,
+  isLocalRepoId,
+  makeLocalRepoId,
+} from "./datasetRoute";
 
 const DATASET_URL =
   process.env.DATASET_URL || "https://huggingface.co/datasets";
@@ -75,7 +80,7 @@ export async function getDatasetInfo(repoId: string): Promise<DatasetInfo> {
   console.log(`[perf] getDatasetInfo cache MISS for ${repoId} — fetching`);
 
   try {
-    const testUrl = `${DATASET_URL}/${repoId}/resolve/main/meta/info.json`;
+    const testUrl = buildVersionedUrl(repoId, "v3.0", "meta/info.json");
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
@@ -152,5 +157,10 @@ export function buildVersionedUrl(
   version: string,
   path: string,
 ): string {
+  if (isLocalRepoId(repoId)) {
+    return `${getLocalDatasetFileBase(repoId)}/${path}`;
+  }
   return `${DATASET_URL}/${repoId}/resolve/main/${path}`;
 }
+
+export { isLocalRepoId, makeLocalRepoId };

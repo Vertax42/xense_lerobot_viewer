@@ -1,5 +1,11 @@
 import { describe, expect, test, mock, afterEach } from "bun:test";
 import { buildVersionedUrl } from "@/utils/versionUtils";
+import {
+  encodeLocalDatasetPath,
+  makeLocalRepoId,
+  repoIdFromRouteParams,
+  routePathFromRepoId,
+} from "@/utils/datasetRoute";
 
 // ---------------------------------------------------------------------------
 // buildVersionedUrl — pure function, no mocking needed
@@ -53,6 +59,30 @@ describe("buildVersionedUrl", () => {
     const url = buildVersionedUrl("myorg/mydataset", "v3.0", "meta/info.json");
     expect(url).toBe(
       "https://huggingface.co/datasets/myorg/mydataset/resolve/main/meta/info.json",
+    );
+  });
+
+  test("builds URL for local dataset files", () => {
+    const repoId = makeLocalRepoId("/tmp/lerobot/local-dataset");
+    const url = buildVersionedUrl(repoId, "v3.0", "meta/info.json");
+    expect(url).toBe(
+      `/api/local-datasets/${encodeLocalDatasetPath("/tmp/lerobot/local-dataset")}/meta/info.json`,
+    );
+  });
+});
+
+describe("local dataset route helpers", () => {
+  test("maps local route params to local repo id", () => {
+    const encodedPath = encodeLocalDatasetPath("/tmp/lerobot/local-dataset");
+    expect(repoIdFromRouteParams("_local", encodedPath)).toBe(
+      makeLocalRepoId("/tmp/lerobot/local-dataset"),
+    );
+  });
+
+  test("builds local episode route from local repo id", () => {
+    const repoId = makeLocalRepoId("/tmp/lerobot/local-dataset");
+    expect(routePathFromRepoId(repoId, 12)).toBe(
+      `/_local/${encodeLocalDatasetPath("/tmp/lerobot/local-dataset")}/episode_12`,
     );
   });
 });

@@ -686,14 +686,12 @@ function PlaybackDriver({
 // ═══════════════════════════════════════
 export default function URDFViewer({
   data,
-  org,
-  dataset,
+  repoId,
   episodeChangerRef,
   playToggleRef,
 }: {
   data: EpisodeData;
-  org?: string;
-  dataset?: string;
+  repoId?: string | null;
   episodeChangerRef?: React.RefObject<((ep: number) => void) | undefined>;
   playToggleRef?: React.RefObject<(() => void) | undefined>;
 }) {
@@ -706,7 +704,6 @@ export default function URDFViewer({
   const { urdfUrl, scale } = robotConfig;
   const isG1 = urdfUrl.includes("g1");
   const isOpenArm = urdfUrl.includes("openarm");
-  const repoId = org && dataset ? `${org}/${dataset}` : null;
   const datasetInfoRef = useRef<{
     version: string;
     info: DatasetMetadata;

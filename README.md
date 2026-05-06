@@ -101,6 +101,20 @@ bun run format
 
 - `DATASET_URL`: (optional) Base URL for dataset hosting (defaults to HuggingFace Datasets).
 
+### Local Dataset Mode
+
+This app can also read a LeRobot dataset directly from a local directory.
+
+- Start the app with `bun dev`
+- Open the homepage
+- Enter an absolute dataset path such as `/data/lerobot/my_dataset`
+
+The directory must contain a standard LeRobot layout, including `meta/info.json`
+and the referenced `data/`, `meta/`, and `videos/` files.
+
+Local datasets are opened under a route like `/_local/<encoded-path>/episode_0`
+and are served through a read-only local API inside this app.
+
 ## Docker Deployment
 
 This application can be deployed using Docker with bun for optimal performance and self-contained builds.

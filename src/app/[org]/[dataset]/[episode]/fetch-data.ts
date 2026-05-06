@@ -9,6 +9,7 @@ import {
   getDatasetVersionAndInfo,
   buildVersionedUrl,
 } from "@/utils/versionUtils";
+import { repoIdFromRouteParams } from "@/utils/datasetRoute";
 import { PADDING, CHART_CONFIG, EXCLUDED_COLUMNS } from "@/utils/constants";
 import {
   processChartDataGroups,
@@ -302,7 +303,7 @@ export async function getEpisodeData(
   dataset: string,
   episodeId: number,
 ): Promise<EpisodeData> {
-  const repoId = `${org}/${dataset}`;
+  const repoId = repoIdFromRouteParams(org, dataset);
   try {
     console.time(`[perf] getDatasetVersionAndInfo`);
     const { version, info: rawInfo } = await getDatasetVersionAndInfo(repoId);
@@ -369,7 +370,7 @@ export async function getAdjacentEpisodesVideoInfo(
   currentEpisodeId: number,
   radius: number = 2,
 ): Promise<AdjacentEpisodeVideos[]> {
-  const repoId = `${org}/${dataset}`;
+  const repoId = repoIdFromRouteParams(org, dataset);
   try {
     const { version, info: rawInfo } = await getDatasetVersionAndInfo(repoId);
     const info = rawInfo as unknown as DatasetMetadata;
