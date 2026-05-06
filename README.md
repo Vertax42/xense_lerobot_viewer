@@ -77,6 +77,13 @@ Run the development server:
 bun dev
 ```
 
+To run with a local dataset:
+
+```bash
+git switch feat/local_dataset
+bun dev
+```
+
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
 You can start editing the page by modifying `src/app/page.tsx` or other files in the `src/` directory. The app supports hot-reloading for rapid development.
