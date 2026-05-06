@@ -26,6 +26,11 @@ const EXAMPLE_DATASETS = [
   "lerobot/aloha_static_cups_open",
   "imstevenpmwork/thanos_picking_power_gem",
 ];
+const LOCAL_EXAMPLE_DATASETS = [
+  "lerobot/high_quality_folding",
+  "lerobot/aloha_static_cups_open",
+  "imstevenpmwork/thanos_picking_power_gem",
+];
 
 type DataSourceMode = "cloud" | "local";
 
@@ -363,7 +368,7 @@ function HomeInner() {
         {/* Example Datasets */}
         <div className="mt-8">
           <p className="text-white/40 text-xs uppercase tracking-widest mb-3 font-medium">
-            {sourceMode === "cloud" ? "Example Datasets" : "Local Example"}
+            {sourceMode === "cloud" ? "Example Datasets" : "Local Examples"}
           </p>
           {sourceMode === "cloud" ? (
             <div className="flex flex-row flex-wrap gap-2 justify-center max-w-xl">
@@ -379,15 +384,18 @@ function HomeInner() {
               ))}
             </div>
           ) : (
-            <button
-              type="button"
-              className="px-3 py-1.5 rounded-full border border-white/20 text-sm text-cyan-200/80 hover:border-cyan-400 hover:text-white hover:bg-cyan-500/15 active:scale-95 transition-all backdrop-blur-sm"
-              onClick={() =>
-                navigate("Xense/assemble_box_with_phone_stand0410_merged_fixed")
-              }
-            >
-              Xense/assemble_box_with_phone_stand0410_merged_fixed
-            </button>
+            <div className="flex flex-row flex-wrap gap-2 justify-center max-w-xl">
+              {LOCAL_EXAMPLE_DATASETS.map((ds) => (
+                <button
+                  key={ds}
+                  type="button"
+                  className="px-3 py-1.5 rounded-full border border-white/20 text-sm text-cyan-200/80 hover:border-cyan-400 hover:text-white hover:bg-cyan-500/15 active:scale-95 transition-all backdrop-blur-sm"
+                  onClick={() => navigate(ds)}
+                >
+                  {ds}
+                </button>
+              ))}
+            </div>
           )}
         </div>
 
