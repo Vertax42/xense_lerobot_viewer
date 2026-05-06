@@ -3,6 +3,7 @@ import { buildVersionedUrl } from "@/utils/versionUtils";
 import {
   DEFAULT_LOCAL_DATASET_ROOT_SUFFIX,
   getDisplayNameForRepoId,
+  getLinkedHubDatasetRepoId,
   getLocalDatasetRelativePath,
   encodeLocalDatasetPath,
   makeLocalRepoId,
@@ -169,6 +170,22 @@ describe("local dataset route helpers", () => {
         ),
       ),
     ).toBe("Xense/assemble_box_with_phone_stand0410_merged_fixed");
+  });
+
+  test("maps a local dataset under the local root to a matching hub repo id", () => {
+    expect(
+      getLinkedHubDatasetRepoId(
+        makeLocalRepoId(
+          "/tmp/lerobot-root/Xense/assemble_box_with_phone_stand0410_merged_fixed",
+        ),
+      ),
+    ).toBe("Xense/assemble_box_with_phone_stand0410_merged_fixed");
+  });
+
+  test("returns null when a local dataset path does not look like a hub repo id", () => {
+    expect(getLinkedHubDatasetRepoId(makeLocalRepoId("/tmp/lerobot-root"))).toBe(
+      null,
+    );
   });
 });
 

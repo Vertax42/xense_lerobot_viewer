@@ -30,9 +30,11 @@ import { getDatasetVersionAndInfo } from "@/utils/versionUtils";
 import type { DatasetMetadata } from "@/utils/parquetUtils";
 import {
   getDisplayNameForRepoId,
+  getLinkedHubDatasetRepoId,
   isLocalRepoId,
   repoIdFromRouteParams,
 } from "@/utils/datasetRoute";
+import { authHeaders } from "@/utils/auth";
 
 const URDFViewer = lazy(() => import("@/components/urdf-viewer"));
 const ActionInsightsPanel = lazy(
@@ -246,6 +248,15 @@ function EpisodeViewerInner({
     useState<CrossEpisodeVarianceData | null>(null);
   const [insightsLoading, setInsightsLoading] = useState(false);
   const insightsLoadedRef = useRef(false);
+  const [doctorRepoId, setDoctorRepoId] = useState<string | null>(
+    getLinkedHubDatasetRepoId(datasetInfo.repoId),
+  );
+  const [doctorRepoStatus, setDoctorRepoStatus] = useState<
+    "idle" | "checking" | "available" | "unavailable"
+  >(() => {
+    const linkedRepoId = getLinkedHubDatasetRepoId(datasetInfo.repoId);
+    return linkedRepoId && !isLocalDataset ? "available" : "idle";
+  });
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -263,6 +274,41 @@ function EpisodeViewerInner({
     setEpisodeFramesData(null);
     setCrossEpData(null);
   }, [datasetInfo.repoId]);
+
+  useEffect(() => {
+    const linkedRepoId = getLinkedHubDatasetRepoId(datasetInfo.repoId);
+    setDoctorRepoId(linkedRepoId);
+
+    if (!linkedRepoId) {
+      setDoctorRepoStatus("unavailable");
+      return;
+    }
+
+    if (!isLocalDataset) {
+      setDoctorRepoStatus("available");
+      return;
+    }
+
+    let cancelled = false;
+    setDoctorRepoStatus("checking");
+
+    fetch(`https://huggingface.co/api/datasets/${linkedRepoId}`, {
+      cache: "no-store",
+      headers: authHeaders(),
+    })
+      .then((response) => {
+        if (cancelled) return;
+        setDoctorRepoStatus(response.ok ? "available" : "unavailable");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setDoctorRepoStatus("unavailable");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [datasetInfo.repoId, isLocalDataset]);
 
   // Eagerly load the URDFViewer bundle + warm the STL geometry cache while
   // the user is on the Episodes tab, so the 3D Replay tab opens faster.
@@ -721,9 +767,9 @@ function EpisodeViewerInner({
                     lerobot-doctor
                   </a>
                 </span>
-                {!isLocalDataset && repoId && (
+                {doctorRepoStatus === "available" && doctorRepoId && (
                   <a
-                    href={`https://jashshah999-lerobot-doctor.hf.space/?dataset=${repoId}`}
+                    href={`https://jashshah999-lerobot-doctor.hf.space/?dataset=${doctorRepoId}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="underline hover:text-slate-200"
@@ -732,14 +778,20 @@ function EpisodeViewerInner({
                   </a>
                 )}
               </div>
-              {isLocalDataset || !repoId ? (
+              {doctorRepoStatus === "checking" ? (
                 <div className="flex flex-1 items-center justify-center rounded border border-slate-700 bg-[var(--surface-0)] text-sm text-slate-400">
-                  Local datasets are not supported by the hosted lerobot-doctor
-                  iframe.
+                  Checking whether this local dataset is available on Hugging
+                  Face…
+                </div>
+              ) : doctorRepoStatus !== "available" || !doctorRepoId ? (
+                <div className="flex flex-1 items-center justify-center rounded border border-slate-700 bg-[var(--surface-0)] text-sm text-slate-400">
+                  {isLocalDataset
+                    ? "This local dataset does not have a matching accessible Hugging Face dataset for the hosted lerobot-doctor iframe."
+                    : "This dataset is not available to the hosted lerobot-doctor iframe."}
                 </div>
               ) : (
                 <iframe
-                  src={`https://jashshah999-lerobot-doctor.hf.space/?dataset=${repoId}`}
+                  src={`https://jashshah999-lerobot-doctor.hf.space/?dataset=${doctorRepoId}`}
                   title="lerobot-doctor"
                   className="flex-1 w-full rounded border border-slate-700 bg-white"
                   sandbox="allow-scripts allow-same-origin allow-popups allow-forms"

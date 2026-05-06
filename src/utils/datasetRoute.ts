@@ -169,6 +169,13 @@ export function getDisplayNameForRepoId(repoId: string): string {
   return getLocalDatasetRelativePath(datasetPath) ?? datasetPath;
 }
 
+export function getLinkedHubDatasetRepoId(repoId: string): string | null {
+  if (!isLocalRepoId(repoId)) return repoId;
+
+  const displayName = getDisplayNameForRepoId(repoId).trim();
+  return /^[^/\s]+\/[^/\s]+$/.test(displayName) ? displayName : null;
+}
+
 export function isAbsoluteDatasetPath(value: string): boolean {
   if (!value) return false;
   if (value.startsWith("file://")) return true;
