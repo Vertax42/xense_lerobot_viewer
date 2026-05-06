@@ -1,7 +1,10 @@
 import { NextRequest } from "next/server";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { decodeLocalDatasetPath } from "@/utils/datasetRoute";
+import {
+  decodeLocalDatasetPath,
+  resolveServerLocalDatasetPath,
+} from "@/utils/datasetRoute";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -58,7 +61,9 @@ async function openLocalFile(
   absolutePath: string;
   size: number;
 } | null> {
-  const datasetRoot = path.resolve(decodeLocalDatasetPath(encodedPath));
+  const datasetRoot = path.resolve(
+    resolveServerLocalDatasetPath(decodeLocalDatasetPath(encodedPath)),
+  );
   const requestedPath = path.resolve(datasetRoot, ...relativeFilePath);
   const relative = path.relative(datasetRoot, requestedPath);
 

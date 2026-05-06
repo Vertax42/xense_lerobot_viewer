@@ -100,6 +100,7 @@ bun run format
 ### Environment Variables
 
 - `DATASET_URL`: (optional) Base URL for dataset hosting (defaults to HuggingFace Datasets).
+- `NEXT_PUBLIC_LOCAL_DATASET_ROOT`: (optional) Local dataset root shown and used by the homepage local mode. Defaults to `~/.cache/huggingface/lerobot`.
 
 ### Local Dataset Mode
 
@@ -107,7 +108,22 @@ This app can also read a LeRobot dataset directly from a local directory.
 
 - Start the app with `bun dev`
 - Open the homepage
-- Enter an absolute dataset path such as `/data/lerobot/my_dataset`
+- Switch the source selector to `Local`
+- Enter a dataset path relative to the local root, for example `Xense/assemble_box_with_phone_stand0410_merged_fixed`
+
+By default, local mode resolves relative paths under:
+
+```text
+~/.cache/huggingface/lerobot
+```
+
+So the example above will open:
+
+```text
+<your-home>/.cache/huggingface/lerobot/Xense/assemble_box_with_phone_stand0410_merged_fixed
+```
+
+Absolute paths such as `/data/lerobot/my_dataset` still work as well.
 
 The directory must contain a standard LeRobot layout, including `meta/info.json`
 and the referenced `data/`, `meta/`, and `videos/` files.

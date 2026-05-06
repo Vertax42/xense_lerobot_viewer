@@ -6,8 +6,10 @@ import { useSearchParams } from "next/navigation";
 import { authHeaders } from "@/utils/auth";
 import HfAuthButton from "@/components/hf-auth-button";
 import {
+  DEFAULT_LOCAL_DATASET_ROOT_DISPLAY,
   encodeLocalDatasetPath,
   isAbsoluteDatasetPath,
+  normalizeRelativeLocalDatasetPath,
   normalizeDatasetPathInput,
 } from "@/utils/datasetRoute";
 
@@ -24,6 +26,8 @@ const EXAMPLE_DATASETS = [
   "lerobot/aloha_static_cups_open",
   "imstevenpmwork/thanos_picking_power_gem",
 ];
+
+type DataSourceMode = "cloud" | "local";
 
 function HomeInner() {
   const searchParams = useSearchParams();
@@ -72,6 +76,7 @@ function HomeInner() {
   }, []);
 
   const [query, setQuery] = useState("");
+  const [sourceMode, setSourceMode] = useState<DataSourceMode>("cloud");
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
@@ -79,8 +84,10 @@ function HomeInner() {
   const [hasFetched, setHasFetched] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  const shouldFetchSuggestions = sourceMode === "cloud" && !!query.trim();
+
   useEffect(() => {
-    if (!query.trim()) {
+    if (!shouldFetchSuggestions) {
       setSuggestions([]);
       setShowSuggestions(false);
       setIsLoading(false);
@@ -110,7 +117,7 @@ function HomeInner() {
       }
     }, 150);
     return () => clearTimeout(timer);
-  }, [query]);
+  }, [query, shouldFetchSuggestions]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -129,13 +136,21 @@ function HomeInner() {
     (value: string) => {
       setShowSuggestions(false);
       const normalized = normalizeDatasetPathInput(value.trim());
-      if (isAbsoluteDatasetPath(normalized)) {
-        router.push(`/_local/${encodeLocalDatasetPath(normalized)}`);
+      if (!normalized) {
+        return;
+      }
+      if (sourceMode === "local" || isAbsoluteDatasetPath(normalized)) {
+        const localDatasetPath = isAbsoluteDatasetPath(normalized)
+          ? normalized
+          : normalizeRelativeLocalDatasetPath(normalized);
+        router.push(
+          `/_local/${encodeLocalDatasetPath(localDatasetPath)}`,
+        );
         return;
       }
       router.push(normalized);
     },
-    [router],
+    [router, sourceMode],
   );
 
   const handleSubmit = (e: { preventDefault: () => void }) => {
@@ -148,6 +163,7 @@ function HomeInner() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (sourceMode !== "cloud") return;
     if (!showSuggestions) return;
     if (e.key === "ArrowDown") {
       e.preventDefault();
@@ -195,6 +211,38 @@ function HomeInner() {
         </p>
 
         {/* Search form */}
+        <div className="mb-3 flex items-center gap-2 rounded-lg border border-white/10 bg-black/20 p-1 backdrop-blur-sm">
+          <button
+            type="button"
+            className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+              sourceMode === "cloud"
+                ? "bg-cyan-500 text-white shadow-md"
+                : "text-white/70 hover:bg-white/10 hover:text-white"
+            }`}
+            onClick={() => {
+              setSourceMode("cloud");
+              setShowSuggestions(!!query.trim());
+            }}
+          >
+            Cloud
+          </button>
+          <button
+            type="button"
+            className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+              sourceMode === "local"
+                ? "bg-cyan-500 text-white shadow-md"
+                : "text-white/70 hover:bg-white/10 hover:text-white"
+            }`}
+            onClick={() => {
+              setSourceMode("local");
+              setShowSuggestions(false);
+              setActiveIndex(-1);
+            }}
+          >
+            Local
+          </button>
+        </div>
+
         <form onSubmit={handleSubmit} className="flex gap-2 justify-center">
           <div ref={containerRef} className="relative">
             {/* Search icon */}
@@ -218,14 +266,20 @@ function HomeInner() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={handleKeyDown}
-              onFocus={() => query.trim() && setShowSuggestions(true)}
-              placeholder="Enter dataset id or local path"
+              onFocus={() =>
+                sourceMode === "cloud" && query.trim() && setShowSuggestions(true)
+              }
+              placeholder={
+                sourceMode === "cloud"
+                  ? "Enter Hugging Face dataset id"
+                  : "Enter local dataset path, e.g. Xense/assemble_box_with_phone_stand0410_merged_fixed"
+              }
               className="pl-10 pr-4 py-2.5 rounded-md text-base text-white bg-white/10 backdrop-blur-sm border border-white/30 focus:outline-none focus:border-cyan-400 focus:bg-white/15 w-[380px] shadow-md placeholder:text-white/40 transition-colors"
               autoComplete="off"
             />
 
             {/* Suggestions dropdown */}
-            {showSuggestions && (
+            {sourceMode === "cloud" && showSuggestions && (
               <ul className="absolute left-0 right-0 top-full mt-1 rounded-md bg-[var(--surface-1)]/95 backdrop-blur-sm border border-white/10 shadow-xl overflow-hidden z-50 max-h-64 overflow-y-auto">
                 {isLoading ? (
                   <li className="flex items-center gap-2.5 px-4 py-3 text-sm text-white/50">
@@ -293,6 +347,15 @@ function HomeInner() {
           </button>
         </form>
 
+        {sourceMode === "local" && (
+          <p className="mt-3 max-w-2xl text-sm text-white/45">
+            Local root:{" "}
+            <span className="font-mono text-white/60">
+              {DEFAULT_LOCAL_DATASET_ROOT_DISPLAY}
+            </span>
+          </p>
+        )}
+
         <div className="mt-3 animate-fade-in-late">
           <HfAuthButton variant="ghost" />
         </div>
@@ -300,20 +363,32 @@ function HomeInner() {
         {/* Example Datasets */}
         <div className="mt-8">
           <p className="text-white/40 text-xs uppercase tracking-widest mb-3 font-medium">
-            Example Datasets
+            {sourceMode === "cloud" ? "Example Datasets" : "Local Example"}
           </p>
-          <div className="flex flex-row flex-wrap gap-2 justify-center max-w-xl">
-            {EXAMPLE_DATASETS.map((ds) => (
-              <button
-                key={ds}
-                type="button"
-                className="px-3 py-1.5 rounded-full border border-white/20 text-sm text-cyan-200/80 hover:border-cyan-400 hover:text-white hover:bg-cyan-500/15 active:scale-95 transition-all backdrop-blur-sm"
-                onClick={() => navigate(ds)}
-              >
-                {ds}
-              </button>
-            ))}
-          </div>
+          {sourceMode === "cloud" ? (
+            <div className="flex flex-row flex-wrap gap-2 justify-center max-w-xl">
+              {EXAMPLE_DATASETS.map((ds) => (
+                <button
+                  key={ds}
+                  type="button"
+                  className="px-3 py-1.5 rounded-full border border-white/20 text-sm text-cyan-200/80 hover:border-cyan-400 hover:text-white hover:bg-cyan-500/15 active:scale-95 transition-all backdrop-blur-sm"
+                  onClick={() => navigate(ds)}
+                >
+                  {ds}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="px-3 py-1.5 rounded-full border border-white/20 text-sm text-cyan-200/80 hover:border-cyan-400 hover:text-white hover:bg-cyan-500/15 active:scale-95 transition-all backdrop-blur-sm"
+              onClick={() =>
+                navigate("Xense/assemble_box_with_phone_stand0410_merged_fixed")
+              }
+            >
+              Xense/assemble_box_with_phone_stand0410_merged_fixed
+            </button>
+          )}
         </div>
 
         {/* Explore CTA */}

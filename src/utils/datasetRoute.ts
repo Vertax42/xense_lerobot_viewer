@@ -1,4 +1,8 @@
 export const LOCAL_ROUTE_ORG = "_local";
+export const DEFAULT_LOCAL_DATASET_ROOT_SUFFIX =
+  "/.cache/huggingface/lerobot";
+export const DEFAULT_LOCAL_DATASET_ROOT_DISPLAY =
+  "~/.cache/huggingface/lerobot";
 const LOCAL_PREFIX = "local:";
 const LOCAL_ROUTE_PREFIX = "/_local";
 const LOCAL_FILE_ROUTE_PREFIX = "/api/local-datasets";
@@ -41,6 +45,31 @@ export function decodeLocalDatasetPath(encodedPath: string): string {
   return decodeBase64UrlToUtf8(encodedPath);
 }
 
+export function resolveServerLocalDatasetPath(value: string): string {
+  const normalized = normalizeDatasetPathInput(value.trim());
+  if (!normalized) {
+    throw new Error("Local dataset path cannot be empty.");
+  }
+
+  if (isAbsoluteDatasetPath(normalized)) {
+    return normalized;
+  }
+
+  const homeDir = process.env.HOME?.trim();
+  const configuredRoot =
+    process.env.LOCAL_DATASET_ROOT?.trim() ||
+    process.env.NEXT_PUBLIC_LOCAL_DATASET_ROOT?.trim() ||
+    (homeDir ? `${homeDir}${DEFAULT_LOCAL_DATASET_ROOT_SUFFIX}` : "");
+
+  if (!configuredRoot) {
+    throw new Error(
+      "Unable to resolve local dataset root. Set LOCAL_DATASET_ROOT or HOME.",
+    );
+  }
+
+  return resolveLocalDatasetInput(normalized, configuredRoot);
+}
+
 export function getLocalDatasetRoute(encodedPath: string): string {
   return `${LOCAL_ROUTE_PREFIX}/${encodedPath}`;
 }
@@ -53,8 +82,91 @@ export function getLocalDatasetFileBase(repoId: string): string {
   return `${LOCAL_FILE_ROUTE_PREFIX}/${encodeLocalDatasetPath(datasetPath)}`;
 }
 
+function trimTrailingSlashes(value: string): string {
+  const trimmed = value.replace(/[\\/]+$/g, "");
+  return trimmed || value;
+}
+
+function normalizeComparablePath(value: string): string {
+  return trimTrailingSlashes(normalizeDatasetPathInput(value).replace(/\\/g, "/"));
+}
+
+export function normalizeRelativeLocalDatasetPath(value: string): string {
+  const segments: string[] = [];
+  for (const segment of normalizeDatasetPathInput(value).replace(/\\/g, "/").split("/")) {
+    if (!segment || segment === ".") continue;
+    if (segment === "..") {
+      throw new Error("Local dataset paths cannot contain '..' segments.");
+    }
+    segments.push(segment);
+  }
+  return segments.join("/");
+}
+
+function getConfiguredClientLocalDatasetRoot(): string | null {
+  const configuredRoot = process.env.NEXT_PUBLIC_LOCAL_DATASET_ROOT?.trim();
+  if (!configuredRoot) return null;
+  return trimTrailingSlashes(normalizeDatasetPathInput(configuredRoot));
+}
+
+export function resolveLocalDatasetInput(
+  value: string,
+  localDatasetRoot: string,
+): string {
+  const normalized = normalizeDatasetPathInput(value.trim());
+  if (!normalized) {
+    throw new Error("Local dataset path cannot be empty.");
+  }
+  if (isAbsoluteDatasetPath(normalized)) {
+    return normalized;
+  }
+
+  const relativePath = normalizeRelativeLocalDatasetPath(normalized);
+  if (!relativePath) {
+    throw new Error("Local dataset path cannot be empty.");
+  }
+  return `${trimTrailingSlashes(normalizeDatasetPathInput(localDatasetRoot))}/${relativePath}`;
+}
+
+export function getLocalDatasetRelativePath(
+  datasetPath: string,
+  localDatasetRoot?: string,
+): string | null {
+  const comparablePath = normalizeComparablePath(datasetPath);
+  const explicitRoot =
+    localDatasetRoot ?? getConfiguredClientLocalDatasetRoot() ?? undefined;
+
+  if (explicitRoot) {
+    const comparableRoot = normalizeComparablePath(explicitRoot);
+    const rootPrefix = `${comparableRoot}/`;
+
+    if (comparablePath.startsWith(rootPrefix)) {
+      const relativePath = comparablePath.slice(rootPrefix.length);
+      return relativePath || null;
+    }
+  }
+
+  const defaultRootPrefix = `${DEFAULT_LOCAL_DATASET_ROOT_SUFFIX}/`;
+  const markerIndex = comparablePath.indexOf(defaultRootPrefix);
+  if (markerIndex < 0) {
+    return null;
+  }
+
+  const relativePath = comparablePath.slice(
+    markerIndex + defaultRootPrefix.length,
+  );
+  if (!relativePath) {
+    return null;
+  }
+
+  return relativePath;
+}
+
 export function getDisplayNameForRepoId(repoId: string): string {
-  return getLocalDatasetPath(repoId) ?? repoId;
+  const datasetPath = getLocalDatasetPath(repoId);
+  if (!datasetPath) return repoId;
+
+  return getLocalDatasetRelativePath(datasetPath) ?? datasetPath;
 }
 
 export function isAbsoluteDatasetPath(value: string): boolean {

@@ -1,9 +1,15 @@
-import { describe, expect, test, mock, afterEach } from "bun:test";
+import { describe, expect, test, mock, afterEach, beforeEach } from "bun:test";
 import { buildVersionedUrl } from "@/utils/versionUtils";
 import {
+  DEFAULT_LOCAL_DATASET_ROOT_SUFFIX,
+  getDisplayNameForRepoId,
+  getLocalDatasetRelativePath,
   encodeLocalDatasetPath,
   makeLocalRepoId,
+  normalizeRelativeLocalDatasetPath,
   repoIdFromRouteParams,
+  resolveLocalDatasetInput,
+  resolveServerLocalDatasetPath,
   routePathFromRepoId,
 } from "@/utils/datasetRoute";
 
@@ -72,6 +78,28 @@ describe("buildVersionedUrl", () => {
 });
 
 describe("local dataset route helpers", () => {
+  const originalLocalRoot = process.env.NEXT_PUBLIC_LOCAL_DATASET_ROOT;
+  const originalHome = process.env.HOME;
+
+  beforeEach(() => {
+    process.env.NEXT_PUBLIC_LOCAL_DATASET_ROOT = "/tmp/lerobot-root";
+    process.env.HOME = "/home/test-user";
+  });
+
+  afterEach(() => {
+    if (originalLocalRoot === undefined) {
+      delete process.env.NEXT_PUBLIC_LOCAL_DATASET_ROOT;
+    } else {
+      process.env.NEXT_PUBLIC_LOCAL_DATASET_ROOT = originalLocalRoot;
+    }
+
+    if (originalHome === undefined) {
+      delete process.env.HOME;
+      return;
+    }
+    process.env.HOME = originalHome;
+  });
+
   test("maps local route params to local repo id", () => {
     const encodedPath = encodeLocalDatasetPath("/tmp/lerobot/local-dataset");
     expect(repoIdFromRouteParams("_local", encodedPath)).toBe(
@@ -84,6 +112,63 @@ describe("local dataset route helpers", () => {
     expect(routePathFromRepoId(repoId, 12)).toBe(
       `/_local/${encodeLocalDatasetPath("/tmp/lerobot/local-dataset")}/episode_12`,
     );
+  });
+
+  test("resolves local relative input against the configured root", () => {
+    expect(
+      resolveLocalDatasetInput(
+        "Xense/assemble_box_with_phone_stand0410_merged_fixed",
+        process.env.NEXT_PUBLIC_LOCAL_DATASET_ROOT!,
+      ),
+    ).toBe(
+      "/tmp/lerobot-root/Xense/assemble_box_with_phone_stand0410_merged_fixed",
+    );
+  });
+
+  test("normalizes a relative local dataset path without making it absolute", () => {
+    expect(
+      normalizeRelativeLocalDatasetPath(
+        "./Xense/assemble_box_with_phone_stand0410_merged_fixed",
+      ),
+    ).toBe("Xense/assemble_box_with_phone_stand0410_merged_fixed");
+  });
+
+  test("resolves server local dataset path via current HOME when input is relative", () => {
+    delete process.env.NEXT_PUBLIC_LOCAL_DATASET_ROOT;
+    expect(
+      resolveServerLocalDatasetPath(
+        "Xense/assemble_box_with_phone_stand0410_merged_fixed",
+      ),
+    ).toBe(
+      "/home/test-user/.cache/huggingface/lerobot/Xense/assemble_box_with_phone_stand0410_merged_fixed",
+    );
+  });
+
+  test("extracts relative display path for datasets under the local root", () => {
+    expect(
+      getLocalDatasetRelativePath(
+        "/tmp/lerobot-root/Xense/assemble_box_with_phone_stand0410_merged_fixed",
+      ),
+    ).toBe("Xense/assemble_box_with_phone_stand0410_merged_fixed");
+  });
+
+  test("extracts relative display path from the default local-root suffix", () => {
+    expect(
+      getLocalDatasetRelativePath(
+        `/home/another-user${DEFAULT_LOCAL_DATASET_ROOT_SUFFIX}/Xense/assemble_box_with_phone_stand0410_merged_fixed`,
+        undefined,
+      ),
+    ).toBe("Xense/assemble_box_with_phone_stand0410_merged_fixed");
+  });
+
+  test("prefers relative display name for local repo ids under the local root", () => {
+    expect(
+      getDisplayNameForRepoId(
+        makeLocalRepoId(
+          "/tmp/lerobot-root/Xense/assemble_box_with_phone_stand0410_merged_fixed",
+        ),
+      ),
+    ).toBe("Xense/assemble_box_with_phone_stand0410_merged_fixed");
   });
 });
 
