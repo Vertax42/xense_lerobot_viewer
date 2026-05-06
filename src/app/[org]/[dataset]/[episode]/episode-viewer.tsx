@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { postParentMessageWithParams } from "@/utils/postParentMessage";
@@ -541,7 +542,13 @@ function EpisodeViewerInner({
           "Doctor",
           "Dataset quality diagnostics (powered by lerobot-doctor)",
         )}
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-1 pr-2">
+          <Link
+            href="/"
+            className="inline-flex items-center px-4 py-3 text-xs font-medium tracking-wide uppercase text-slate-400 transition-colors hover:text-slate-100"
+          >
+            Home
+          </Link>
           <HfAuthButton variant="tab" />
         </div>
       </div>
