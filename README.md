@@ -61,6 +61,15 @@ This project uses [Bun](https://bun.sh) as its package manager. If you don't hav
 curl -fsSL https://bun.sh/install | bash
 ```
 
+### Setup
+
+Clone the repository:
+
+```bash
+git clone git@github.com:xensedyl/lerobot-dataset-visualizer.git
+cd lerobot-dataset-visualizer
+```
+
 ### Installation
 
 Install dependencies:
