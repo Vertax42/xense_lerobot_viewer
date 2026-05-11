@@ -1,25 +1,22 @@
 FROM oven/bun:1 AS base
 
-# Set working directory
 WORKDIR /app
 
-# Copy package files
+# Install dependencies first for better layer caching.
 COPY package.json bun.lock* ./
-
-# Install dependencies
 RUN bun install --frozen-lockfile
 
-# Copy the rest of the application
 COPY . .
 
-# Build the application
 RUN bun run build
 
-# Expose port 7860
-EXPOSE 7860
+# The container expects local LeRobot datasets to be mounted at /data/lerobot,
+# either via `-v ~/.cache/huggingface/lerobot:/data/lerobot` on the host or
+# a Docker named volume.
+ENV LOCAL_DATASET_ROOT=/data/lerobot
+VOLUME ["/data/lerobot"]
 
-# Set environment variable for port
+EXPOSE 7860
 ENV PORT=7860
 
-# Start the application
 CMD ["bun", "start"]

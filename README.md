@@ -1,180 +1,181 @@
----
-title: Visualize Dataset (v2.0+ latest dataset format)
-emoji: 💻
-colorFrom: blue
-colorTo: green
-sdk: docker
-app_port: 7860
-pinned: false
-license: apache-2.0
-hf_oauth: true
-hf_oauth_scopes:
-  - read-repos
-hf_oauth_expiration_minutes: 480
----
+# XenseRobotics · LeRobot Local Dataset Visualizer
 
-# LeRobot Dataset Visualizer
+A web tool by **Xense Robotics** for interactive exploration of **local** LeRobot datasets — videos, sensor signals, episode statistics, and 3D URDF replay, all served straight from the filesystem.
 
-LeRobot Dataset Tool and Visualizer is a web application for interactive exploration and visualization of robotics datasets, particularly those in the LeRobot format. It enables users to browse, view, and analyze episodes from large-scale robotics datasets, combining synchronized video playback with rich, interactive data graphs.
+This fork removes the Hugging Face Hub remote-loading path; everything reads from your local LeRobot cache (`~/.cache/huggingface/lerobot` by default).
 
-## Project Overview
+## Features
 
-This tool is designed to help robotics researchers and practitioners quickly inspect and understand large, complex datasets. It fetches dataset metadata and episode data (including video and sensor/telemetry data), and provides a unified interface for:
+- **Local dataset browser**: the homepage lists every LeRobot dataset under your local root with a video preview and metadata badge (robot type, codebase version, episode count). Filter by name, robot type, or **dataset tags** (see below).
+- **Dataset health probing**: each dataset is scanned for `meta/info.json` + `data/` + `videos/` and classified as Healthy / Empty / Incomplete. The homepage shows red/amber card borders + corner badges for problem datasets; clicking an incomplete one opens a diagnostic page instead of failing on a missing file.
+- **Editable dataset tags** (task / scene / objects): annotate each dataset with a task category (`pick_and_place`, `peeling`, …), a scene (`tabletop`, `kitchen`, …), and a list of manipulated objects (`cucumber`, `box`, …). Tags persist as `meta/xense_tags.json` inside the dataset and power a task-based filter on the homepage. See [Tagging datasets](#tagging-datasets) below.
+- **Synchronized video + telemetry**: episode pages play all cameras side-by-side, synced to interactive Recharts time series for `observation.state`, `action`, and other signals.
+- **Statistics, Frames, Action Insights, Filtering** panels for dataset quality inspection — flagged episodes can be exported as a ready-to-run LeRobot CLI command.
+- **3D URDF replay** for SO-100, SO-101, and OpenArm bimanual robots, with auto-matched joint mapping that tolerates `.pos` / `.position` / `.q` column suffixes. URDF assets load from the public Hugging Face `lerobot/robot-urdfs` bucket.
+- **Per-card "Open episode N" shortcut**: jump straight to a specific episode from the homepage card.
+- Supports dataset codebase versions **v2.0 / v2.1 / v3.0** (autodetected from `meta/info.json`).
 
-- Navigating between organizations, datasets, and episodes
-- Watching episode videos
-- Exploring synchronized time-series data with interactive charts
-- Analyzing action quality and identifying problematic episodes
-- Visualizing robot poses in 3D using URDF models
-- Paginating through large datasets efficiently
+## Prerequisites
 
-## Key Features
-
-- **Dataset & Episode Navigation:** Quickly jump between organizations, datasets, and episodes using a sidebar and navigation controls.
-- **Synchronized Video & Data:** Video playback is synchronized with interactive data graphs for detailed inspection of sensor and control signals.
-- **Overview Panel:** At-a-glance summary of dataset metadata, camera info, and episode details.
-- **Statistics Panel:** Dataset-level statistics including episode count, total recording time, frames-per-second, and an episode-length histogram.
-- **Action Insights Panel:** Data-driven analysis tools to guide training configuration — includes autocorrelation, state-action alignment, speed distribution, and cross-episode variance heatmap.
-- **Filtering Panel:** Identify and flag problematic episodes (low movement, jerky motion, outlier length) for removal. Exports flagged episode IDs as a ready-to-run LeRobot CLI command.
-- **3D URDF Viewer:** Visualize robot joint poses frame-by-frame in an interactive 3D scene, with end-effector trail rendering. Supports SO-100, SO-101, and OpenArm bimanual robots.
-- **Efficient Data Loading:** Uses parquet and JSON loading for large dataset support, with pagination, chunking, and lazy-loaded panels for fast initial load.
-- **Responsive UI:** Built with React, Next.js, and Tailwind CSS for a fast, modern user experience.
-
-## Technologies Used
-
-- **Next.js** (App Router)
-- **React**
-- **Recharts** (for data visualization)
-- **Three.js** + **@react-three/fiber** + **@react-three/drei** (for 3D URDF visualization)
-- **urdf-loader** (for parsing URDF robot models)
-- **hyparquet** (for reading Parquet files)
-- **Tailwind CSS** (styling)
-
-## Getting Started
-
-### Prerequisites
-
-This project uses [Bun](https://bun.sh) as its package manager. If you don't have it installed:
+- [Bun](https://bun.sh) for the package manager and test runner
+- A directory of LeRobot datasets on disk
 
 ```bash
-# Install Bun
 curl -fsSL https://bun.sh/install | bash
 ```
 
-### Setup
-
-Clone the repository:
+## Setup
 
 ```bash
 git clone git@github.com:xensedyl/lerobot-dataset-visualizer.git
 cd lerobot-dataset-visualizer
-```
-
-### Installation
-
-Install dependencies:
-
-```bash
 bun install
-```
-
-### Development
-
-Run the development server:
-
-```bash
 bun dev
 ```
 
-To run with a local dataset:
+Open <http://localhost:3000>. The homepage scans your local LeRobot root and shows everything it finds.
 
-```bash
-git switch feat/local_dataset
-bun dev
-```
+## Local dataset root
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `src/app/page.tsx` or other files in the `src/` directory. The app supports hot-reloading for rapid development.
-
-### Other Commands
-
-```bash
-# Build for production
-bun run build
-
-# Start production server
-bun start
-
-# Run linter
-bun run lint
-
-# Format code
-bun run format
-```
-
-### Environment Variables
-
-- `DATASET_URL`: (optional) Base URL for dataset hosting (defaults to HuggingFace Datasets).
-- `NEXT_PUBLIC_LOCAL_DATASET_ROOT`: (optional) Local dataset root shown and used by the homepage local mode. Defaults to `~/.cache/huggingface/lerobot`.
-
-### Local Dataset Mode
-
-This app can also read a LeRobot dataset directly from a local directory.
-
-- Start the app with `bun dev`
-- Open the homepage
-- Switch the source selector to `Local`
-- Enter a dataset path relative to the local root, for example `Xense/assemble_box_with_phone_stand0410_merged_fixed`
-
-By default, local mode resolves relative paths under:
+The app expects a directory tree like this:
 
 ```text
-~/.cache/huggingface/lerobot
+<LOCAL_DATASET_ROOT>/
+  <org-or-namespace>/<dataset-name>/
+    meta/info.json
+    data/...
+    videos/...
 ```
 
-So the example above will open:
+The root is resolved in this order:
 
-```text
-<your-home>/.cache/huggingface/lerobot/Xense/assemble_box_with_phone_stand0410_merged_fixed
-```
+1. `LOCAL_DATASET_ROOT` (server-side only)
+2. `NEXT_PUBLIC_LOCAL_DATASET_ROOT` (server- or client-readable)
+3. `${HOME}/.cache/huggingface/lerobot` (default)
 
-Absolute paths such as `/data/lerobot/my_dataset` still work as well.
-
-The directory must contain a standard LeRobot layout, including `meta/info.json`
-and the referenced `data/`, `meta/`, and `videos/` files.
-
-Local datasets are opened under a route like `/_local/<encoded-path>/episode_0`
-and are served through a read-only local API inside this app.
-
-## Docker Deployment
-
-This application can be deployed using Docker with bun for optimal performance and self-contained builds.
-
-### Build the Docker image
+Set it explicitly when running outside the default location:
 
 ```bash
-docker build -t lerobot-visualizer .
+LOCAL_DATASET_ROOT=/data/lerobot bun dev
 ```
 
-### Run the container
+Datasets are discovered by recursively scanning for `meta/info.json` (up to 3 levels deep). The `calibration/` directory is skipped automatically.
+
+### Downloading datasets
+
+Use the standard `huggingface-cli` to populate the cache:
 
 ```bash
-docker run -p 7860:7860 lerobot-visualizer
+huggingface-cli download lerobot/svla_so101_pickplace \
+  --repo-type dataset \
+  --local-dir ~/.cache/huggingface/lerobot/lerobot/svla_so101_pickplace
 ```
 
-The application will be available at [http://localhost:7860](http://localhost:7860).
+Once the download finishes, refresh the homepage — the new dataset will appear.
 
-### Run with custom environment variables
+## Commands
 
 ```bash
-docker run -p 7860:7860 -e DATASET_URL=your-url lerobot-visualizer
+bun dev              # Next.js dev server
+bun run build        # Production build
+bun start            # Production server
+bun test             # Unit tests (bun:test)
+bun run type-check   # TypeScript: app + tests
+bun run lint         # ESLint
+bun run format       # Prettier --write
+bun run validate     # type-check + lint + format:check + test
 ```
 
-## Contributing
+After any code change: `bun run format && bun run validate`.
 
-Contributions, bug reports, and feature requests are welcome! Please open an issue or submit a pull request.
+## Tagging datasets
 
-### Acknowledgement
+LeRobot's schema doesn't carry a concept of "task category" or "scene" at the dataset level — only natural-language `tasks` per episode. This visualizer adds an editable sidecar so you can curate three pieces of dataset-level metadata:
 
-The app was orignally created by [@Mishig25](https://github.com/mishig25) and taken from this PR [#1055](https://github.com/huggingface/lerobot/pull/1055)
+| Field     | Type                      | Example                                   |
+| --------- | ------------------------- | ----------------------------------------- |
+| `task`    | single string             | `pick_and_place`, `peeling`, `assembly`   |
+| `scene`   | single string             | `tabletop`, `kitchen`, `industrial_bench` |
+| `objects` | string list               | `["cucumber", "knife"]`                   |
+| `notes`   | free-form text (optional) | `"left arm only, gripper repurposed"`     |
+
+Tags are stored per-dataset as plain JSON at:
+
+```
+<LOCAL_DATASET_ROOT>/<org>/<dataset>/meta/xense_tags.json
+```
+
+The `xense_` filename prefix keeps the sidecar from ever colliding with upstream LeRobot fields, and the per-dataset location means tags travel with the data when it is `rsync`-ed or moved to another machine. The file is plain UTF-8 JSON; you can also edit it by hand.
+
+### Editing tags
+
+Two entry points:
+
+1. **Homepage card** — hover any dataset card, an `✎ Tags` button appears in the top-left corner. Click to open the editor modal. Useful for quick first-pass labelling across many datasets.
+2. **Episode viewer** — open any episode, an `✎ Edit tags` button sits next to the dataset name (top-right of the Episodes tab). The currently-loaded tags also render as colored chips under the dataset name so you can verify what's set. Useful for refining tags while inspecting the data.
+
+The editor offers a suggested vocabulary in dropdowns (`pick_and_place`, `peeling`, `tabletop`, `kitchen`, etc.), but you can always pick `+ Custom value…` to type a new label — values are normalized (lowercase, whitespace → `_`) on save, so `"Pick And Place"` and `"pick_and_place"` collapse into the same tag.
+
+### Filtering by tag
+
+When at least one dataset has a `task` tag, the homepage shows a **Task** filter row above the grid:
+
+- `All (N)` — show everything
+- `peeling (3)`, `pick_and_place (5)`, … — click to show only that task
+- `Untagged (M)` — datasets without a `task` tag yet
+
+The search box also matches against task / scene / object values, so typing `cucumber` will find any dataset whose `objects` list contains it.
+
+### Example sidecar
+
+```json
+{
+  "task": "peeling",
+  "scene": "kitchen",
+  "objects": ["cucumber", "knife"],
+  "notes": "right-hand only, left arm parked",
+  "updated_at": "2026-05-11T12:21:00.069Z"
+}
+```
+
+`updated_at` is auto-stamped by the server on every save. Missing fields are treated as "unset" — an absent `xense_tags.json` is equivalent to all fields empty.
+
+## Architecture notes
+
+- Dataset files are served by an internal route `/api/local-datasets/[encodedPath]/[...filePath]` with HTTP range support for video streaming.
+- The homepage discovers datasets via `src/lib/local-datasets-discovery.ts`.
+- All cloud/HF Hub loading code (OAuth, proxy, search) has been removed.
+- URDF/mesh assets for the 3D replay still load from `https://huggingface.co/buckets/lerobot/robot-urdfs/` (override with `NEXT_PUBLIC_URDF_BASE_URL`).
+
+## Docker
+
+The Dockerfile declares a `VOLUME ["/data/lerobot"]` and defaults `LOCAL_DATASET_ROOT=/data/lerobot` — mount your host LeRobot cache there:
+
+```bash
+docker build -t xense-lerobot-visualizer .
+
+# Bind-mount the host cache (read-only is fine):
+docker run -p 7860:7860 \
+  -v ~/.cache/huggingface/lerobot:/data/lerobot:ro \
+  xense-lerobot-visualizer
+
+# Or point at a different host path:
+docker run -p 7860:7860 \
+  -v /mnt/big-disk/lerobot-data:/data/lerobot:ro \
+  xense-lerobot-visualizer
+```
+
+Open <http://localhost:7860>.
+
+If you keep datasets in several places, override the env directly:
+
+```bash
+docker run -p 7860:7860 \
+  -v /srv/datasets:/srv/datasets:ro \
+  -e LOCAL_DATASET_ROOT=/srv/datasets \
+  xense-lerobot-visualizer
+```
+
+## Acknowledgement
+
+This project is forked from the LeRobot dataset visualizer originally created by [@Mishig25](https://github.com/mishig25) (huggingface/lerobot PR [#1055](https://github.com/huggingface/lerobot/pull/1055)).

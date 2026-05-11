@@ -1,4 +1,8 @@
-# CLAUDE.md — LeRobot Dataset Visualizer
+# CLAUDE.md — XenseRobotics LeRobot Local Dataset Visualizer
+
+## What this project is
+
+A **local-only** LeRobot dataset visualizer (forked from huggingface/lerobot PR #1055 / @Mishig25). The Hugging Face Hub remote-loading path has been removed: every dataset is read directly from the filesystem via `/api/local-datasets/[encodedPath]/[...filePath]`. URDF/mesh assets for the 3D replay are still fetched from the public HF bucket `lerobot/robot-urdfs`.
 
 ## Package manager
 
@@ -30,10 +34,33 @@ bun dev              # Next.js dev server
 bun test             # Run all unit tests (bun:test)
 bun run type-check   # tsc --noEmit (app) + tsc -p tsconfig.test.json --noEmit (tests)
 bun run lint         # next lint
-bun run validate     # type-check + lint + format:check
+bun run validate     # type-check + lint + format:check + test
 ```
 
 ## Architecture
+
+### Local dataset model
+
+Each LeRobot dataset under `LOCAL_DATASET_ROOT` (default `${HOME}/.cache/huggingface/lerobot`) is identified by the presence of `meta/info.json`. The homepage server-side scans up to 3 levels deep via `src/lib/local-datasets-discovery.ts`, returning `LocalDatasetSummary[]` with an integrity probe (`ok` / `empty` / `incomplete`).
+
+### Repo IDs and routing
+
+Internally a local dataset is referred to by a `local:`-prefixed `repoId` (legacy wrapper, retained for minimal blast radius across `fetch-data`, `versionUtils`, sidebar, viewer). Helpers in `src/utils/datasetRoute.ts`:
+
+- `makeLocalRepoId(path)` / `isLocalRepoId(id)` / `getLocalDatasetPath(id)`
+- `encodeLocalDatasetPath(path)` (base64url) → used in URLs
+- `repoIdFromRouteParams(org, dataset)` decodes `/_local/<encoded>` route params
+- `routePathFromRepoId(repoId, episodeId?)` → `/_local/<encoded>/episode_N`
+- `getLinkedHubDatasetRepoId` exists but is unused since the cloud path is gone.
+
+The browser URL for episodes is `/_local/<base64url-encoded-relative-path>/episode_N`. The on-disk directory is `src/app/%5Flocal/...` because `_` is URL-encoded in directory names.
+
+### File serving
+
+- `src/app/api/local-datasets/route.ts` — `GET` returns the discovery JSON (datasets + integrity)
+- `src/app/api/local-datasets/[encodedPath]/[...filePath]/route.ts` — streams individual files with HTTP range support for video
+
+`buildVersionedUrl(repoId, version, path)` in `src/utils/versionUtils.ts` is now local-only and **throws** for non-local repoIds.
 
 ### Dataset version support
 
@@ -51,6 +78,12 @@ Three versions are supported. Version is detected from `meta/info.json` → `cod
 
 - `getEpisodeDataV2()` for v2.0 and v2.1
 - `getEpisodeDataV3()` for v3.0
+
+Note: `src/app/[org]/[dataset]/` no longer has `page.tsx` files — those were the cloud-route wrappers. The directory is kept because it still houses `episode-viewer.tsx`, `fetch-data.ts`, `error.tsx`, `actions.ts`, and tests. The `_local` route is the only public entry into `EpisodeViewer`.
+
+### Health probing
+
+Episode entry pages call `probeDatasetHealth()` in `src/app/_local/[encodedPath]/[episode]/page.tsx` server-side **before** rendering `EpisodeViewer`. If `data/` or `videos/` are missing or `total_episodes === 0`, a diagnostic page is shown instead. The homepage grid mirrors the same `DatasetIntegrity` via `LocalDatasetSummary.integrity` and renders red/amber card borders + corner badges accordingly.
 
 ### v3.0 specifics
 
@@ -78,16 +111,24 @@ formatStringWithVars(info.data_path, {
 
 ## Key files
 
-| File                                              | Purpose                                                                                                                                  |
-| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/app/[org]/[dataset]/[episode]/fetch-data.ts` | Main data-loading entry point; v2/v3 parsers; `computeColumnMinMax`                                                                      |
-| `src/utils/versionUtils.ts`                       | `getDatasetInfo`, `getDatasetVersionAndInfo`, `buildVersionedUrl`                                                                        |
-| `src/utils/stringFormatting.ts`                   | `buildV3DataPath`, `buildV3VideoPath`, `buildV3EpisodesMetadataPath`, padding helpers                                                    |
-| `src/utils/parquetUtils.ts`                       | `fetchParquetFile`, `readParquetAsObjects`, `formatStringWithVars`                                                                       |
-| `src/utils/dataProcessing.ts`                     | Chart grouping pipeline: `buildSuffixGroupsMap` → `computeGroupStats` → `groupByScale` → `flattenScaleGroups` → `processChartDataGroups` |
-| `src/utils/typeGuards.ts`                         | `bigIntToNumber`, `isNumeric`, `isValidTaskIndex`, etc.                                                                                  |
-| `src/utils/constants.ts`                          | `PADDING`, `EXCLUDED_COLUMNS`, `CHART_CONFIG`, `THRESHOLDS`                                                                              |
-| `src/types/`                                      | TypeScript types: `DatasetVersion`, `EpisodeMetadataV3`, `VideoInfo`, `ChartDataGroup`, etc.                                             |
+| File                                                              | Purpose                                                                                                                                  |
+| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/lib/local-datasets-discovery.ts`                             | Server-side scanner: walks the local root, returns datasets + `DatasetIntegrity`                                                         |
+| `src/app/page.tsx`                                                | Server component → calls `discoverLocalDatasets()` → renders `LocalDatasetGrid`                                                          |
+| `src/app/local-dataset-grid.tsx`                                  | Client grid: filter, health filter, "Open episode N" quick-jump, card with health badge                                                  |
+| `src/app/_local/[encodedPath]/[episode]/page.tsx`                 | Server health probe + `EpisodeViewer` mount (the only live entry into the viewer)                                                        |
+| `src/app/api/local-datasets/route.ts`                             | `GET /api/local-datasets` — discovery API for clients                                                                                    |
+| `src/app/api/local-datasets/[encodedPath]/[...filePath]/route.ts` | `GET`/`HEAD` for individual files, range-aware for video                                                                                 |
+| `src/app/[org]/[dataset]/[episode]/episode-viewer.tsx`            | Tabbed viewer (Episodes / 3D Replay / Statistics / Filtering / Frames / Action Insights)                                                 |
+| `src/app/[org]/[dataset]/[episode]/fetch-data.ts`                 | Main data-loading entry point; v2/v3 parsers; `computeColumnMinMax`                                                                      |
+| `src/components/urdf-viewer.tsx`                                  | 3D viewer; loads URDFs from the HF bucket; `autoMatchJoints` does column→joint mapping (supports `.pos`/`.position`/`.q` suffixes)       |
+| `src/utils/versionUtils.ts`                                       | `getDatasetInfo`, `getDatasetVersionAndInfo`, `buildVersionedUrl` (local-only)                                                           |
+| `src/utils/datasetRoute.ts`                                       | `local:` repoId wrapper, base64url encode, route ↔ repoId conversion                                                                     |
+| `src/utils/stringFormatting.ts`                                   | `buildV3DataPath`, `buildV3VideoPath`, `buildV3EpisodesMetadataPath`, padding helpers                                                    |
+| `src/utils/parquetUtils.ts`                                       | `fetchParquetFile`, `readParquetAsObjects`, `formatStringWithVars`                                                                       |
+| `src/utils/dataProcessing.ts`                                     | Chart grouping pipeline: `buildSuffixGroupsMap` → `computeGroupStats` → `groupByScale` → `flattenScaleGroups` → `processChartDataGroups` |
+| `src/utils/typeGuards.ts`                                         | `bigIntToNumber`, `isNumeric`, `isValidTaskIndex`, etc.                                                                                  |
+| `src/utils/constants.ts`                                          | `PADDING`, `EXCLUDED_COLUMNS`, `CHART_CONFIG`, `THRESHOLDS`                                                                              |
 
 ## Chart data pipeline
 
@@ -101,17 +142,18 @@ Series keys use `" | "` as delimiter (e.g. `observation.state | 0`).
 - BigInt literals (`42n`) require `tsconfig.test.json` (target ES2020) — test files are excluded from `tsconfig.json`
 - `@types/bun` is installed as a devDependency for `bun:test` type resolution
 - Mocking fetch: `globalThis.fetch = mock(() => Promise.resolve(new Response(...))) as unknown as typeof fetch`
+- All `getDatasetVersionAndInfo` / `buildVersionedUrl` tests must call with a `makeLocalRepoId(...)` repoId — bare strings will throw "Only local datasets are supported"
 - CI: `.github/workflows/test.yml` runs `bun test` on push/PR to main
 
-## URL structure
+## Local dataset path resolution
 
-All dataset URLs:
+Server resolution order (in `resolveLocalDatasetRoot` and `resolveServerLocalDatasetPath`):
 
-```
-https://huggingface.co/datasets/{org}/{dataset}/resolve/main/{path}
-```
+1. `LOCAL_DATASET_ROOT` env (server-only)
+2. `NEXT_PUBLIC_LOCAL_DATASET_ROOT` env (server- or client-readable)
+3. `${HOME}/.cache/huggingface/lerobot` fallback
 
-Built by `buildVersionedUrl(repoId, version, path)`. The `version` param is accepted but currently unused in the URL (always `main` revision).
+Inside a dataset, files are addressed by `/api/local-datasets/<base64url(relative_path)>/<file/path>`.
 
 ## Excluded columns (not shown in charts)
 
@@ -124,8 +166,11 @@ Reserved/bookkeeping columns from lerobot — see `EXCLUDED_COLUMNS` in `src/uti
 
 - URDFs and meshes are hosted in the HF bucket `lerobot/robot-urdfs` — base URL `https://huggingface.co/buckets/lerobot/robot-urdfs/resolve` (no `/main` segment; buckets are unbranched). Override with `NEXT_PUBLIC_URDF_BASE_URL` for local development.
 - Asset layout under the bucket: `g1/`, `openarm/`, `so101/` (both SO-100 and SO-101 live here).
+- `getRobotConfig` defaults to **`so101_new_calib.urdf`** for any `robot_type` that doesn't match G1/OpenArm. The legacy `so100.urdf` is only used when `robot_type` is literally `so100` / `so_100` / contains `so100_arm`. **This means `so100_follower` (lerobot 0.4+ catch-all term) goes through SO-101.**
+- `autoMatchJoints` tolerates `.pos` / `.position` / `.q` suffixes on column names, so SO-101 features like `shoulder_pan.pos` auto-match the URDF joint `shoulder_pan`.
 - **URDFLoader gotcha**: after our `loadMeshCb` returns, `URDFLoader.js` does `if (obj instanceof THREE.Mesh) obj.material = <urdf-material>`, overwriting any material we set. Workaround: wrap the loaded mesh in a `THREE.Group` so the `instanceof Mesh` check fails. DAE returns a Group already; STL must be wrapped explicitly.
 - **STLLoader event ordering**: `manager.itemEnd(url)` fires _before_ the user `onLoad` callback, so `manager.onLoad` can fire before meshes are attached to the robot tree. Defer post-load work (auto-fit camera, shadow flags) with `setTimeout(..., 0)`. Don't try to rebuild materials in `manager.onLoad` — pick the archetype color directly inside `loadMeshCb`.
+- **Strict-mode double-mount in dev**: `URDFLoader.load` is async; if React tears down the first effect run before the load completes, the abandoned robot would otherwise be `scene.add`-ed and stay parked at its rest pose. The RobotScene effect uses a `cancelled` flag + `mountedRobot` local to ignore late callbacks and remove the right robot on cleanup. Don't strip these without preserving the behavior.
 - **OpenArm DAE files ship 23 stray `PointLight`s** that drown out scene lighting. Strip non-`AmbientLight` lights from `collada.scene` before adding it to the robot.
 - Scene setup: `<Canvas shadows>` with `ACESFilmicToneMapping` (exposure 0.9), 3-point directional + ambient lights, `<Environment preset="studio" background={false} />`, `<color attach="background" args={["#1a2433"]} />`. `<OrbitControls makeDefault />` is required so `useThree().controls` exposes the controls for auto-fit.
 
@@ -137,4 +182,4 @@ CSS tokens in `src/app/globals.css` (Tailwind v4 `@theme inline`):
 - Text: `--text-primary`, `--text-muted`, `--text-faint`
 - Accent: `--accent #38bdf8` (cyan) — primary interactive color across UI
 - Helpers: `.panel`, `.panel-raised`, `.tabular` (tabular-nums)
-- **Color semantics**: cyan = primary/active, orange (`orange-400/500`) is reserved for **flagged-episode** UI only — don't reuse it for generic accents.
+- **Color semantics**: cyan = primary/active brand; emerald = healthy state; red = incomplete dataset; amber = empty dataset / soft warning; orange (`orange-400/500`) is reserved for **flagged-episode** UI only — don't reuse it for generic accents.
