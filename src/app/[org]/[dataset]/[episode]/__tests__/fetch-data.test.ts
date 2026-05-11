@@ -129,7 +129,7 @@ import {
 } from "@/utils/stringFormatting";
 import { PADDING } from "@/utils/constants";
 
-const DATASET_BASE = "https://huggingface.co/datasets";
+import { encodeLocalDatasetPath, makeLocalRepoId } from "@/utils/datasetRoute";
 
 function makeChunkAndIndex(episodeId: number, chunkSize: number) {
   const episode_chunk = Math.floor(episodeId / chunkSize)
@@ -142,7 +142,10 @@ function makeChunkAndIndex(episodeId: number, chunkSize: number) {
 }
 
 describe("v2.0 path construction (rabhishek100/so100_train_dataset style)", () => {
-  const repoId = "rabhishek100/so100_train_dataset";
+  const datasetPath = "rabhishek100/so100_train_dataset";
+  const repoId = makeLocalRepoId(datasetPath);
+  const encoded = encodeLocalDatasetPath(datasetPath);
+  const DATASET_BASE = `/api/local-datasets/${encoded}`;
   const version = "v2.0";
   const dataPath =
     "data/{episode_chunk:03d}/episode_{episode_index:06d}.parquet";
@@ -156,9 +159,7 @@ describe("v2.0 path construction (rabhishek100/so100_train_dataset style)", () =
       episode_index,
     });
     const url = buildVersionedUrl(repoId, version, path);
-    expect(url).toBe(
-      `${DATASET_BASE}/${repoId}/resolve/main/data/000/episode_000000.parquet`,
-    );
+    expect(url).toBe(`${DATASET_BASE}/data/000/episode_000000.parquet`);
   });
 
   test("episode 42 in chunk 0", () => {
@@ -192,7 +193,7 @@ describe("v2.0 path construction (rabhishek100/so100_train_dataset style)", () =
     });
     const url = buildVersionedUrl(repoId, version, path);
     expect(url).toBe(
-      `${DATASET_BASE}/${repoId}/resolve/main/videos/observation.images.top/chunk-000/episode_000007.mp4`,
+      `${DATASET_BASE}/videos/observation.images.top/chunk-000/episode_000007.mp4`,
     );
   });
 });
@@ -235,30 +236,31 @@ describe("v2.1 path construction (youliangtan/so101-table-cleanup style)", () =>
 });
 
 describe("v3.0 path construction (lerobot-data-collection/level12_rac_2_2026-02-07 style)", () => {
-  const repoId = "lerobot-data-collection/level12_rac_2_2026-02-07";
+  const datasetPath = "lerobot-data-collection/level12_rac_2_2026-02-07";
+  const repoId = makeLocalRepoId(datasetPath);
+  const encoded = encodeLocalDatasetPath(datasetPath);
+  const DATASET_BASE = `/api/local-datasets/${encoded}`;
   const version = "v3.0";
 
   test("episode metadata path for first file", () => {
     const path = buildV3EpisodesMetadataPath(0, 0);
     const url = buildVersionedUrl(repoId, version, path);
     expect(url).toBe(
-      `${DATASET_BASE}/${repoId}/resolve/main/meta/episodes/chunk-000/file-000.parquet`,
+      `${DATASET_BASE}/meta/episodes/chunk-000/file-000.parquet`,
     );
   });
 
   test("data path from episode metadata (chunk 0, file 2)", () => {
     const path = buildV3DataPath(0, 2);
     const url = buildVersionedUrl(repoId, version, path);
-    expect(url).toBe(
-      `${DATASET_BASE}/${repoId}/resolve/main/data/chunk-000/file-002.parquet`,
-    );
+    expect(url).toBe(`${DATASET_BASE}/data/chunk-000/file-002.parquet`);
   });
 
   test("video path for top camera (chunk 0, file 0)", () => {
     const path = buildV3VideoPath("observation.images.top", 0, 0);
     const url = buildVersionedUrl(repoId, version, path);
     expect(url).toBe(
-      `${DATASET_BASE}/${repoId}/resolve/main/videos/observation.images.top/chunk-000/file-000.mp4`,
+      `${DATASET_BASE}/videos/observation.images.top/chunk-000/file-000.mp4`,
     );
   });
 

@@ -19,62 +19,78 @@ import {
 // ---------------------------------------------------------------------------
 describe("buildVersionedUrl", () => {
   test("builds URL for v2.0 dataset data path", () => {
+    const repoId = makeLocalRepoId("rabhishek100/so100_train_dataset");
+    const encoded = encodeLocalDatasetPath("rabhishek100/so100_train_dataset");
     const url = buildVersionedUrl(
-      "rabhishek100/so100_train_dataset",
+      repoId,
       "v2.0",
       "data/000/episode_000000.parquet",
     );
     expect(url).toBe(
-      "https://huggingface.co/datasets/rabhishek100/so100_train_dataset/resolve/main/data/000/episode_000000.parquet",
+      `/api/local-datasets/${encoded}/data/000/episode_000000.parquet`,
     );
   });
 
   test("builds URL for v2.1 dataset video path", () => {
+    const repoId = makeLocalRepoId("youliangtan/so101-table-cleanup");
+    const encoded = encodeLocalDatasetPath("youliangtan/so101-table-cleanup");
     const url = buildVersionedUrl(
-      "youliangtan/so101-table-cleanup",
+      repoId,
       "v2.1",
       "videos/observation.images.top/chunk-000/episode_000007.mp4",
     );
     expect(url).toBe(
-      "https://huggingface.co/datasets/youliangtan/so101-table-cleanup/resolve/main/videos/observation.images.top/chunk-000/episode_000007.mp4",
+      `/api/local-datasets/${encoded}/videos/observation.images.top/chunk-000/episode_000007.mp4`,
     );
   });
 
   test("builds URL for v3.0 episode metadata", () => {
+    const datasetPath = "lerobot-data-collection/level12_rac_2_2026-02-07";
+    const repoId = makeLocalRepoId(datasetPath);
+    const encoded = encodeLocalDatasetPath(datasetPath);
     const url = buildVersionedUrl(
-      "lerobot-data-collection/level12_rac_2_2026-02-07",
+      repoId,
       "v3.0",
       "meta/episodes/chunk-000/file-000.parquet",
     );
     expect(url).toBe(
-      "https://huggingface.co/datasets/lerobot-data-collection/level12_rac_2_2026-02-07/resolve/main/meta/episodes/chunk-000/file-000.parquet",
+      `/api/local-datasets/${encoded}/meta/episodes/chunk-000/file-000.parquet`,
     );
   });
 
   test("builds URL for v3.0 data chunk", () => {
+    const datasetPath = "lerobot-data-collection/level12_rac_2_2026-02-07";
+    const repoId = makeLocalRepoId(datasetPath);
+    const encoded = encodeLocalDatasetPath(datasetPath);
     const url = buildVersionedUrl(
-      "lerobot-data-collection/level12_rac_2_2026-02-07",
+      repoId,
       "v3.0",
       "data/chunk-001/file-003.parquet",
     );
     expect(url).toBe(
-      "https://huggingface.co/datasets/lerobot-data-collection/level12_rac_2_2026-02-07/resolve/main/data/chunk-001/file-003.parquet",
+      `/api/local-datasets/${encoded}/data/chunk-001/file-003.parquet`,
     );
   });
 
   test("builds URL for meta/info.json", () => {
-    const url = buildVersionedUrl("myorg/mydataset", "v3.0", "meta/info.json");
-    expect(url).toBe(
-      "https://huggingface.co/datasets/myorg/mydataset/resolve/main/meta/info.json",
-    );
+    const repoId = makeLocalRepoId("myorg/mydataset");
+    const encoded = encodeLocalDatasetPath("myorg/mydataset");
+    const url = buildVersionedUrl(repoId, "v3.0", "meta/info.json");
+    expect(url).toBe(`/api/local-datasets/${encoded}/meta/info.json`);
   });
 
-  test("builds URL for local dataset files", () => {
+  test("builds URL for absolute local dataset paths", () => {
     const repoId = makeLocalRepoId("/tmp/lerobot/local-dataset");
     const url = buildVersionedUrl(repoId, "v3.0", "meta/info.json");
     expect(url).toBe(
       `/api/local-datasets/${encodeLocalDatasetPath("/tmp/lerobot/local-dataset")}/meta/info.json`,
     );
+  });
+
+  test("throws when given a non-local repoId", () => {
+    expect(() =>
+      buildVersionedUrl("foo/bar", "v3.0", "meta/info.json"),
+    ).toThrow(/local datasets/);
   });
 });
 
@@ -183,9 +199,9 @@ describe("local dataset route helpers", () => {
   });
 
   test("returns null when a local dataset path does not look like a hub repo id", () => {
-    expect(getLinkedHubDatasetRepoId(makeLocalRepoId("/tmp/lerobot-root"))).toBe(
-      null,
-    );
+    expect(
+      getLinkedHubDatasetRepoId(makeLocalRepoId("/tmp/lerobot-root")),
+    ).toBe(null);
   });
 });
 
@@ -239,7 +255,7 @@ describe("getDatasetVersionAndInfo", () => {
 
     const { getDatasetVersionAndInfo } = await import("@/utils/versionUtils");
     const result = await getDatasetVersionAndInfo(
-      "rabhishek100/so100_train_dataset",
+      makeLocalRepoId("rabhishek100/so100_train_dataset"),
     );
     expect(result.version).toBe("v2.0");
     expect(result.info.total_episodes).toBe(50);
@@ -278,7 +294,7 @@ describe("getDatasetVersionAndInfo", () => {
     // Use fresh import to bypass cache — or just call with a different repoId
     const { getDatasetVersionAndInfo } = await import("@/utils/versionUtils");
     const result = await getDatasetVersionAndInfo(
-      "youliangtan/so101-table-cleanup",
+      makeLocalRepoId("youliangtan/so101-table-cleanup"),
     );
     expect(result.version).toBe("v2.1");
   });
@@ -314,7 +330,7 @@ describe("getDatasetVersionAndInfo", () => {
 
     const { getDatasetVersionAndInfo } = await import("@/utils/versionUtils");
     const result = await getDatasetVersionAndInfo(
-      "lerobot-data-collection/level12_rac_2_2026-02-07",
+      makeLocalRepoId("lerobot-data-collection/level12_rac_2_2026-02-07"),
     );
     expect(result.version).toBe("v3.0");
     expect(result.info.total_episodes).toBe(200);
@@ -333,9 +349,9 @@ describe("getDatasetVersionAndInfo", () => {
     ) as unknown as typeof fetch;
 
     const { getDatasetVersionAndInfo } = await import("@/utils/versionUtils");
-    await expect(getDatasetVersionAndInfo("old/dataset")).rejects.toThrow(
-      "not supported",
-    );
+    await expect(
+      getDatasetVersionAndInfo(makeLocalRepoId("old/dataset")),
+    ).rejects.toThrow("not supported");
   });
 
   test("throws when info.json has no features field", async () => {
@@ -348,7 +364,9 @@ describe("getDatasetVersionAndInfo", () => {
     ) as unknown as typeof fetch;
 
     const { getDatasetVersionAndInfo } = await import("@/utils/versionUtils");
-    await expect(getDatasetVersionAndInfo("broken/dataset")).rejects.toThrow();
+    await expect(
+      getDatasetVersionAndInfo(makeLocalRepoId("broken/dataset")),
+    ).rejects.toThrow();
   });
 
   test("throws when fetch fails (network error)", async () => {
@@ -358,7 +376,7 @@ describe("getDatasetVersionAndInfo", () => {
 
     const { getDatasetVersionAndInfo } = await import("@/utils/versionUtils");
     await expect(
-      getDatasetVersionAndInfo("nonexistent/repo"),
+      getDatasetVersionAndInfo(makeLocalRepoId("nonexistent/repo")),
     ).rejects.toThrow();
   });
 });

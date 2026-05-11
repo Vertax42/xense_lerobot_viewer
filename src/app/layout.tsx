@@ -1,13 +1,13 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import { AuthProvider } from "@/context/auth-context";
 
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "LeRobot Dataset Tool and Visualizer",
-  description: "Tool and Visualizer for LeRobot Datasets",
+  title: "XenseRobotics · LeRobot Dataset Visualizer",
+  description:
+    "XenseRobotics local LeRobot dataset visualizer — episode videos, telemetry charts, and 3D URDF replay.",
 };
 
 export default function RootLayout({
@@ -17,9 +17,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={inter.className}>
-        <AuthProvider>{children}</AuthProvider>
-      </body>
+      <body className={inter.className}>{children}</body>
     </html>
   );
 }

@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { postParentMessageWithParams } from "@/utils/postParentMessage";
 import { SimpleVideosPlayer } from "@/components/simple-videos-player";
 import PlaybackBar from "@/components/playback-bar";
 import { TimeProvider, useTime } from "@/context/time-context";
@@ -12,7 +11,6 @@ import Sidebar from "@/components/side-nav";
 import StatsPanel from "@/components/stats-panel";
 import OverviewPanel from "@/components/overview-panel";
 import Loading from "@/components/loading-component";
-import HfAuthButton from "@/components/hf-auth-button";
 import { hasURDFSupport } from "@/lib/so101-robot";
 import {
   computeColumnMinMax,
@@ -29,12 +27,13 @@ import {
 import { getDatasetVersionAndInfo } from "@/utils/versionUtils";
 import type { DatasetMetadata } from "@/utils/parquetUtils";
 import {
+  encodeLocalDatasetPath,
   getDisplayNameForRepoId,
-  getLinkedHubDatasetRepoId,
-  isLocalRepoId,
+  getLocalDatasetPath,
   repoIdFromRouteParams,
 } from "@/utils/datasetRoute";
-import { authHeaders } from "@/utils/auth";
+import { type DatasetTags, EMPTY_TAGS } from "@/lib/dataset-tags";
+import DatasetTagsEditor from "@/components/dataset-tags-editor";
 
 const URDFViewer = lazy(() => import("@/components/urdf-viewer"));
 const ActionInsightsPanel = lazy(
@@ -52,7 +51,6 @@ type ActiveTab =
   | "frames"
   | "insights"
   | "filtering"
-  | "doctor"
   | "urdf";
 
 // Subscribes to `currentTime` so its parent doesn't have to. Keeping this
@@ -79,9 +77,6 @@ function UrlTimeSync() {
         "",
         `${window.location.pathname}?${newParams.toString()}`,
       );
-      postParentMessageWithParams((params: URLSearchParams) => {
-        params.set("path", window.location.pathname + window.location.search);
-      });
     }
   }, [isPlaying, currentTime, searchParams]);
 
@@ -215,7 +210,30 @@ function EpisodeViewerInner({
   const [chartsReady, setChartsReady] = useState(false);
   const repoId = org && dataset ? repoIdFromRouteParams(org, dataset) : null;
   const datasetDisplayName = getDisplayNameForRepoId(datasetInfo.repoId);
-  const isLocalDataset = isLocalRepoId(datasetInfo.repoId);
+  // Local datasets carry an editable tag sidecar (see public/api/local-datasets/<encoded>/tags).
+  // Compute the encoded URL segment from the in-memory repoId so the viewer
+  // can read/write tags without needing it threaded down from the page.
+  const localDatasetPath = getLocalDatasetPath(datasetInfo.repoId);
+  const tagsEncodedPath = localDatasetPath
+    ? encodeLocalDatasetPath(localDatasetPath)
+    : null;
+  const [tags, setTags] = useState<DatasetTags>(EMPTY_TAGS);
+  const [tagsEditorOpen, setTagsEditorOpen] = useState(false);
+
+  useEffect(() => {
+    if (!tagsEncodedPath) return;
+    let cancelled = false;
+    fetch(`/api/local-datasets/${tagsEncodedPath}/tags`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled || !data) return;
+        setTags(data as DatasetTags);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [tagsEncodedPath]);
 
   const loadStartRef = useRef(performance.now());
 
@@ -248,15 +266,6 @@ function EpisodeViewerInner({
     useState<CrossEpisodeVarianceData | null>(null);
   const [insightsLoading, setInsightsLoading] = useState(false);
   const insightsLoadedRef = useRef(false);
-  const [doctorRepoId, setDoctorRepoId] = useState<string | null>(
-    getLinkedHubDatasetRepoId(datasetInfo.repoId),
-  );
-  const [doctorRepoStatus, setDoctorRepoStatus] = useState<
-    "idle" | "checking" | "available" | "unavailable"
-  >(() => {
-    const linkedRepoId = getLinkedHubDatasetRepoId(datasetInfo.repoId);
-    return linkedRepoId && !isLocalDataset ? "available" : "idle";
-  });
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -274,41 +283,6 @@ function EpisodeViewerInner({
     setEpisodeFramesData(null);
     setCrossEpData(null);
   }, [datasetInfo.repoId]);
-
-  useEffect(() => {
-    const linkedRepoId = getLinkedHubDatasetRepoId(datasetInfo.repoId);
-    setDoctorRepoId(linkedRepoId);
-
-    if (!linkedRepoId) {
-      setDoctorRepoStatus("unavailable");
-      return;
-    }
-
-    if (!isLocalDataset) {
-      setDoctorRepoStatus("available");
-      return;
-    }
-
-    let cancelled = false;
-    setDoctorRepoStatus("checking");
-
-    fetch(`https://huggingface.co/api/datasets/${linkedRepoId}`, {
-      cache: "no-store",
-      headers: authHeaders(),
-    })
-      .then((response) => {
-        if (cancelled) return;
-        setDoctorRepoStatus(response.ok ? "available" : "unavailable");
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setDoctorRepoStatus("unavailable");
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [datasetInfo.repoId, isLocalDataset]);
 
   // Eagerly load the URDFViewer bundle + warm the STL geometry cache while
   // the user is on the Episodes tab, so the 3D Replay tab opens faster.
@@ -480,13 +454,6 @@ function EpisodeViewerInner({
     }
   }, [searchParams, seek]);
 
-  // sync with parent window hf.co/spaces
-  useEffect(() => {
-    postParentMessageWithParams((params: URLSearchParams) => {
-      params.set("path", window.location.pathname + window.location.search);
-    });
-  }, []);
-
   // Initialize page based on the current episode. Splitting this out from
   // the keyboard listener effect lets the listener attach exactly once.
   useEffect(() => {
@@ -575,6 +542,16 @@ function EpisodeViewerInner({
       <UrlTimeSync />
       {/* Top tab bar */}
       <div className="flex items-center border-b border-white/5 bg-[var(--surface-0)] shrink-0">
+        <Link
+          href="/"
+          className="flex items-center border-r border-white/5 px-5 py-3 text-base font-bold tracking-tight transition-opacity hover:opacity-80"
+          title="Xense Robotics · back to dataset browser"
+        >
+          <span className="bg-gradient-to-r from-cyan-300 to-sky-300 bg-clip-text text-transparent">
+            Xense
+          </span>
+          <span className="text-emerald-400">Robotics</span>
+        </Link>
         {renderTab("episodes", "Episodes")}
         {hasURDFSupport(datasetInfo.robot_type) &&
           datasetInfo.codebase_version >= "v3.0" &&
@@ -583,11 +560,6 @@ function EpisodeViewerInner({
         {renderTab("filtering", "Filtering")}
         {renderTab("frames", "Frames")}
         {renderTab("insights", "Action Insights")}
-        {renderTab(
-          "doctor",
-          "Doctor",
-          "Dataset quality diagnostics (powered by lerobot-doctor)",
-        )}
         <div className="ml-auto flex items-center gap-1 pr-2">
           <Link
             href="/"
@@ -595,7 +567,6 @@ function EpisodeViewerInner({
           >
             Home
           </Link>
-          <HfAuthButton variant="tab" />
         </div>
       </div>
 
@@ -633,42 +604,65 @@ function EpisodeViewerInner({
           {activeTab === "episodes" && (
             <>
               <div className="flex items-center gap-4 mb-2">
-                <a
-                  href="https://github.com/huggingface/lerobot"
-                  target="_blank"
-                  className="block shrink-0 opacity-90 hover:opacity-100 transition-opacity"
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src="https://github.com/huggingface/lerobot/raw/main/media/readme/lerobot-logo-thumbnail.png"
-                    alt="LeRobot Logo"
-                    className="w-24"
-                  />
-                </a>
-
-                <div className="min-w-0">
-                  {isLocalDataset ? (
-                    <p
-                      className="text-base font-medium truncate text-slate-200"
-                      title={datasetDisplayName}
-                    >
-                      {datasetDisplayName}
-                    </p>
-                  ) : (
-                    <a
-                      href={`https://huggingface.co/datasets/${datasetInfo.repoId}`}
-                      target="_blank"
-                      className="text-slate-200 hover:text-cyan-300 transition-colors"
-                    >
-                      <p className="text-base font-medium truncate">
-                        {datasetDisplayName}
-                      </p>
-                    </a>
-                  )}
+                <div className="min-w-0 flex-1">
+                  <p
+                    className="text-base font-medium truncate text-slate-200"
+                    title={datasetDisplayName}
+                  >
+                    {datasetDisplayName}
+                  </p>
                   <p className="text-[10px] uppercase tracking-wide text-slate-500 mt-0.5 tabular">
                     Episode · {episodeId}
                   </p>
+                  {tagsEncodedPath &&
+                    (tags.task || tags.scene || tags.objects.length > 0) && (
+                      <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[10px]">
+                        {tags.task && (
+                          <span
+                            className="rounded bg-violet-500/25 px-1.5 py-0.5 font-medium text-violet-100"
+                            title="task"
+                          >
+                            {tags.task}
+                          </span>
+                        )}
+                        {tags.scene && (
+                          <span
+                            className="rounded bg-sky-500/20 px-1.5 py-0.5 text-sky-200"
+                            title="scene"
+                          >
+                            @{tags.scene}
+                          </span>
+                        )}
+                        {tags.objects.map((o) => (
+                          <span
+                            key={o}
+                            className="rounded bg-white/10 px-1.5 py-0.5 text-slate-300"
+                            title="object"
+                          >
+                            {o}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                 </div>
+                {tagsEncodedPath && (
+                  <button
+                    type="button"
+                    onClick={() => setTagsEditorOpen(true)}
+                    title="Edit tags (task, scene, objects)"
+                    className="inline-flex shrink-0 items-center gap-1 rounded-md border border-white/10 bg-[var(--surface-1)]/60 px-2.5 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:border-cyan-400/50 hover:text-cyan-100"
+                  >
+                    <svg
+                      className="h-3 w-3"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                      aria-hidden
+                    >
+                      <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793 4 13.172V16h2.828l7.379-7.379-2.828-2.828z" />
+                    </svg>
+                    Edit tags
+                  </button>
+                )}
               </div>
 
               {/* Videos */}
@@ -753,53 +747,6 @@ function EpisodeViewerInner({
             </Suspense>
           )}
 
-          {activeTab === "doctor" && (
-            <div className="flex flex-col h-full">
-              <div className="flex items-center justify-between px-1 pb-2 text-xs text-slate-400">
-                <span>
-                  Dataset quality diagnostics &mdash; powered by{" "}
-                  <a
-                    href="https://github.com/jashshah999/lerobot-doctor"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="underline hover:text-slate-200"
-                  >
-                    lerobot-doctor
-                  </a>
-                </span>
-                {doctorRepoStatus === "available" && doctorRepoId && (
-                  <a
-                    href={`https://jashshah999-lerobot-doctor.hf.space/?dataset=${doctorRepoId}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="underline hover:text-slate-200"
-                  >
-                    Open in new tab
-                  </a>
-                )}
-              </div>
-              {doctorRepoStatus === "checking" ? (
-                <div className="flex flex-1 items-center justify-center rounded border border-slate-700 bg-[var(--surface-0)] text-sm text-slate-400">
-                  Checking whether this local dataset is available on Hugging
-                  Face…
-                </div>
-              ) : doctorRepoStatus !== "available" || !doctorRepoId ? (
-                <div className="flex flex-1 items-center justify-center rounded border border-slate-700 bg-[var(--surface-0)] text-sm text-slate-400">
-                  {isLocalDataset
-                    ? "This local dataset does not have a matching accessible Hugging Face dataset for the hosted lerobot-doctor iframe."
-                    : "This dataset is not available to the hosted lerobot-doctor iframe."}
-                </div>
-              ) : (
-                <iframe
-                  src={`https://jashshah999-lerobot-doctor.hf.space/?dataset=${doctorRepoId}`}
-                  title="lerobot-doctor"
-                  className="flex-1 w-full rounded border border-slate-700 bg-white"
-                  sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
-                />
-              )}
-            </div>
-          )}
-
           {activeTab === "urdf" && (
             <Suspense fallback={<Loading />}>
               <URDFViewer
@@ -812,6 +759,19 @@ function EpisodeViewerInner({
           )}
         </div>
       </div>
+
+      {tagsEditorOpen && tagsEncodedPath && (
+        <DatasetTagsEditor
+          datasetRelativePath={datasetDisplayName}
+          encodedPath={tagsEncodedPath}
+          initialTags={tags}
+          onClose={() => setTagsEditorOpen(false)}
+          onSaved={(updated) => {
+            setTags(updated);
+            setTagsEditorOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 }

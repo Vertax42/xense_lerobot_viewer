@@ -9,11 +9,10 @@ const nextConfig: NextConfig = {
     ignoreDuringBuilds: true,
   },
   transpilePackages: ["three"],
-  // Avoid the 200-800ms cold-start cost of barrel-file imports.
-  // react-icons re-exports thousands of icon components from /fa, etc.;
-  // recharts and @huggingface/hub also have wide entry surfaces.
+  // Avoid the 200-800ms cold-start cost of barrel-file imports for the
+  // wide-surface packages we still ship.
   experimental: {
-    optimizePackageImports: ["react-icons", "recharts", "@huggingface/hub"],
+    optimizePackageImports: ["react-icons", "recharts"],
   },
   generateBuildId: () => packageJson.version,
 };

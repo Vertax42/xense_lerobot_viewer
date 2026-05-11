@@ -1,16 +1,12 @@
 /**
- * Utility functions for checking dataset version compatibility
+ * Utility functions for reading dataset metadata from the local file API.
  */
 
-import { authHeaders } from "./auth";
 import {
   getLocalDatasetFileBase,
   isLocalRepoId,
   makeLocalRepoId,
 } from "./datasetRoute";
-
-const DATASET_URL =
-  process.env.DATASET_URL || "https://huggingface.co/datasets";
 
 /**
  * Dataset information structure from info.json
@@ -89,7 +85,6 @@ export async function getDatasetInfo(repoId: string): Promise<DatasetInfo> {
       method: "GET",
       cache: "no-store",
       signal: controller.signal,
-      headers: authHeaders(),
     });
 
     clearTimeout(timeoutId);
@@ -154,13 +149,15 @@ export async function getDatasetVersion(repoId: string): Promise<string> {
 
 export function buildVersionedUrl(
   repoId: string,
-  version: string,
+  _version: string,
   path: string,
 ): string {
-  if (isLocalRepoId(repoId)) {
-    return `${getLocalDatasetFileBase(repoId)}/${path}`;
+  if (!isLocalRepoId(repoId)) {
+    throw new Error(
+      `Only local datasets are supported. Got non-local repoId: ${repoId}`,
+    );
   }
-  return `${DATASET_URL}/${repoId}/resolve/main/${path}`;
+  return `${getLocalDatasetFileBase(repoId)}/${path}`;
 }
 
 export { isLocalRepoId, makeLocalRepoId };
