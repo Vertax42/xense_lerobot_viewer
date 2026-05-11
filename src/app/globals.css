@@ -82,55 +82,6 @@ body {
   background-clip: padding-box;
 }
 
-/* ── Background video (used on the landing page) ─────────────────── */
-.video-background {
-  @apply fixed top-0 right-0 bottom-0 left-0 -z-10 overflow-hidden w-screen h-screen;
-}
-.video-background video {
-  @apply absolute top-1/2 left-1/2 pointer-events-none bg-black;
-  min-width: 100vw;
-  min-height: 100vh;
-  width: auto;
-  height: auto;
-  transform: translate(-50%, -50%);
-  object-fit: cover;
-  filter: brightness(0.55) saturate(0.85);
-}
-
-@keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(16px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.animate-fade-in-up {
-  animation: fadeInUp 0.55s ease-out forwards;
-}
-
-/* Late entry — used for elements that should arrive after the hero stack
-   has settled, so they read as a quiet afterthought rather than another
-   simultaneous CTA. `both` fill mode keeps the element invisible during
-   the delay so it doesn't briefly flash with the parent's animation. */
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.animate-fade-in-late {
-  animation: fadeIn 0.45s ease-out 0.55s both;
-}
-
 /* Pop animation for dropdowns — anchors at top-right and scales up
    slightly while fading in. Short enough (140ms) to feel snappy. */
 @keyframes menuPop {

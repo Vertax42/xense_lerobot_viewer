@@ -1,6 +1,5 @@
 export const LOCAL_ROUTE_ORG = "_local";
-export const DEFAULT_LOCAL_DATASET_ROOT_SUFFIX =
-  "/.cache/huggingface/lerobot";
+export const DEFAULT_LOCAL_DATASET_ROOT_SUFFIX = "/.cache/huggingface/lerobot";
 export const DEFAULT_LOCAL_DATASET_ROOT_DISPLAY =
   "~/.cache/huggingface/lerobot";
 const LOCAL_PREFIX = "local:";
@@ -13,7 +12,10 @@ function encodeUtf8ToBase64Url(value: string): string {
   for (const byte of bytes) {
     binary += String.fromCharCode(byte);
   }
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
 }
 
 function decodeBase64UrlToUtf8(value: string): string {
@@ -88,12 +90,16 @@ function trimTrailingSlashes(value: string): string {
 }
 
 function normalizeComparablePath(value: string): string {
-  return trimTrailingSlashes(normalizeDatasetPathInput(value).replace(/\\/g, "/"));
+  return trimTrailingSlashes(
+    normalizeDatasetPathInput(value).replace(/\\/g, "/"),
+  );
 }
 
 export function normalizeRelativeLocalDatasetPath(value: string): string {
   const segments: string[] = [];
-  for (const segment of normalizeDatasetPathInput(value).replace(/\\/g, "/").split("/")) {
+  for (const segment of normalizeDatasetPathInput(value)
+    .replace(/\\/g, "/")
+    .split("/")) {
     if (!segment || segment === ".") continue;
     if (segment === "..") {
       throw new Error("Local dataset paths cannot contain '..' segments.");

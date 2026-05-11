@@ -94,7 +94,10 @@ function buildCommonHeaders(filePath: string, size: number): Headers {
   const headers = new Headers();
   headers.set("content-type", inferContentType(filePath));
   headers.set("accept-ranges", "bytes");
-  headers.set("cache-control", "private, max-age=3600, stale-while-revalidate=86400");
+  headers.set(
+    "cache-control",
+    "private, max-age=3600, stale-while-revalidate=86400",
+  );
   headers.set("content-length", String(size));
   return headers;
 }
