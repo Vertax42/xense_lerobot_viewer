@@ -53,7 +53,10 @@ function getRobotConfig(robotType: string | null) {
       scale: 3,
     };
   }
-  if (lower.includes("so100") && !lower.includes("so101")) {
+  // Use the legacy SO-100 URDF only when the robot_type explicitly says so
+  // (rare, since `so100_follower` is the lerobot 0.4+ catch-all for both
+  // SO-100 and SO-101 hardware and the SO-101 mesh is the canonical one).
+  if (lower === "so100" || lower === "so_100" || lower.includes("so100_arm")) {
     return { urdfUrl: `${URDF_BASE_URL}/so101/so100.urdf`, scale: 10 };
   }
   return {
@@ -116,6 +119,12 @@ const G1_SDK_TO_URDF: Record<string, string> = {
   "krightwristyaw.q": "right_wrist_yaw_joint",
 };
 
+// Strip lerobot column suffixes like ".pos", ".position", ".q" so URDF joint
+// names match SO-101 / SO-100 style features (e.g. "shoulder_pan.pos").
+function stripLerobotSuffix(s: string): string {
+  return s.replace(/\.(pos|position|q)$/i, "");
+}
+
 function autoMatchJoints(
   urdfJointNames: string[],
   columnKeys: string[],
@@ -124,6 +133,7 @@ function autoMatchJoints(
   const suffixes = columnKeys.map((k) =>
     (k.split(SERIES_DELIM).pop()?.trim() ?? k).toLowerCase(),
   );
+  const strippedSuffixes = suffixes.map(stripLerobotSuffix);
 
   // Build reverse lookup: URDF joint name → column key (for G1 SDK-style columns)
   const g1Reverse = new Map<string, string>();
@@ -139,6 +149,14 @@ function autoMatchJoints(
     const exactIdx = suffixes.findIndex((s) => s === lower);
     if (exactIdx >= 0) {
       mapping[jointName] = columnKeys[exactIdx];
+      continue;
+    }
+
+    // Match after stripping ".pos" / ".position" / ".q" — handles SO-101
+    // features like "shoulder_pan.pos" → URDF joint "shoulder_pan".
+    const strippedIdx = strippedSuffixes.findIndex((s) => s === lower);
+    if (strippedIdx >= 0) {
+      mapping[jointName] = columnKeys[strippedIdx];
       continue;
     }
 
@@ -280,6 +298,8 @@ function RobotScene({
 
   useEffect(() => {
     setError(null);
+    let cancelled = false;
+    let mountedRobot: URDFRobot | null = null;
     const isOpenArm = urdfUrl.includes("openarm");
     const isG1 = urdfUrl.includes("g1");
     const manager = new THREE.LoadingManager();
@@ -504,6 +524,13 @@ function RobotScene({
     loader.load(
       urdfUrl,
       (robot) => {
+        // React strict-mode double-mounts effects in dev; the first effect
+        // can be torn down while loader.load is still in flight. If so,
+        // drop the robot on the floor instead of adding it to the scene —
+        // otherwise the abandoned robot stays parked at its rest pose
+        // alongside the live one driven by jointValues.
+        if (cancelled) return;
+        mountedRobot = robot;
         robotRef.current = robot;
         robot.rotateOnAxis(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
         robot.scale.set(scale, scale, scale);
@@ -549,18 +576,26 @@ function RobotScene({
       },
       undefined,
       (err) => {
+        if (cancelled) return;
         console.error("Error loading URDF:", err);
         setError(String(err));
       },
     );
     return () => {
-      if (robotRef.current) {
-        scene.remove(robotRef.current);
+      cancelled = true;
+      // Prefer the robot we actually mounted via this effect run; fall back
+      // to robotRef in case the load completed but didn't update mountedRobot
+      // (defensive — shouldn't happen with the cancelled guard above).
+      const toRemove = mountedRobot ?? robotRef.current;
+      if (toRemove) {
+        scene.remove(toRemove);
+      }
+      if (robotRef.current === mountedRobot) {
         robotRef.current = null;
       }
       tipLinksRef.current = [];
     };
-  }, [urdfUrl, scale, scene, onJointsLoaded, ensureTrails]);
+  }, [urdfUrl, scale, scene, camera, controls, onJointsLoaded, ensureTrails]);
 
   const tipWorldPos = useMemo(() => new THREE.Vector3(), []);
 

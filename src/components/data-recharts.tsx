@@ -197,7 +197,10 @@ const SingleDataGraph = React.memo(
     );
 
     // Flatten all rows for recharts
-    const chartData = useMemo(() => data.map((row) => flattenRow(row)), [data]);
+    const chartData = useMemo(
+      () => data.map((row) => flattenRow(row)),
+      [data, flattenRow],
+    );
 
     // dataKeys is purely derived from chartData — compute it during render,
     // not via a useState + useEffect that would force an extra render and
