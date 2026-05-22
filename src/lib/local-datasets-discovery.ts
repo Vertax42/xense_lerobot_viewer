@@ -188,8 +188,10 @@ async function walkForDatasets(
         integrity,
         tags,
       });
+      return;
     }
-    return;
+    // Root itself looks like a dataset (no valid URL for it) — skip recording
+    // but keep descending so nested datasets under sibling directories are found.
   }
 
   await Promise.all(
