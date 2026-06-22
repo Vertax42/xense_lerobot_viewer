@@ -4,6 +4,7 @@ import React, { useEffect, useRef } from "react";
 import { useTime } from "../context/time-context";
 import { FaExpand, FaCompress, FaTimes, FaEye } from "react-icons/fa";
 import type { VideoInfo } from "@/types";
+import { VideoOverlayCanvas } from "./video-overlay-canvas";
 
 const THRESHOLDS = {
   VIDEO_SYNC_TOLERANCE: 0.2,
@@ -26,6 +27,31 @@ export const SimpleVideosPlayer = ({
   const { currentTime, seek, externalSeekVersion, isPlaying, setIsPlaying } =
     useTime();
   const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
+  // Mirror videoRefs into state so the absolutely-positioned VQA overlay can
+  // re-render with the actual <video> element once it mounts. Using a ref
+  // alone means the overlay's first render still sees `null`.
+  const [videoEls, setVideoEls] = React.useState<(HTMLVideoElement | null)[]>(
+    () => [],
+  );
+  // Stable ref callbacks per index. If we used inline `(el) => { ... }` here
+  // React would re-invoke the callback on every render (the function identity
+  // changes), which combined with `setVideoEls` would toggle state on each
+  // tick and produce a "Maximum update depth exceeded" loop.
+  const videoRefCallbacksRef = useRef<
+    ((el: HTMLVideoElement | null) => void)[]
+  >([]);
+  while (videoRefCallbacksRef.current.length < videosInfo.length) {
+    const idx = videoRefCallbacksRef.current.length;
+    videoRefCallbacksRef.current.push((el: HTMLVideoElement | null) => {
+      videoRefs.current[idx] = el;
+      setVideoEls((prev) => {
+        if (prev[idx] === el) return prev;
+        const next = prev.slice();
+        next[idx] = el;
+        return next;
+      });
+    });
+  }
   const [hiddenVideos, setHiddenVideos] = React.useState<string[]>([]);
   const [enlargedVideo, setEnlargedVideo] = React.useState<string | null>(null);
   const [showHiddenMenu, setShowHiddenMenu] = React.useState(false);
@@ -368,19 +394,26 @@ export const SimpleVideosPlayer = ({
                   </button>
                 </span>
               </p>
-              <video
-                ref={(el: HTMLVideoElement | null) => {
-                  videoRefs.current[idx] = el;
-                }}
-                className={`w-full object-contain ${
-                  isEnlarged ? "max-h-[90vh] max-w-[90vw]" : ""
-                }`}
-                muted
-                preload="metadata"
-              >
-                <source src={info.url} type="video/mp4" />
-                Your browser does not support the video tag.
-              </video>
+              <div className="relative w-full">
+                <video
+                  ref={videoRefCallbacksRef.current[idx]}
+                  className={`w-full object-contain ${
+                    isEnlarged ? "max-h-[90vh] max-w-[90vw]" : ""
+                  }`}
+                  muted
+                  preload="metadata"
+                >
+                  <source src={info.url} type="video/mp4" />
+                  Your browser does not support the video tag.
+                </video>
+                {/* VQA bbox/keypoint overlay. Reads atoms + drawMode from
+                    AnnotationsContext; pointer-events fall through when
+                    not in draw mode so video controls remain usable. */}
+                <VideoOverlayCanvas
+                  videoEl={videoEls[idx] ?? null}
+                  cameraKey={info.filename}
+                />
+              </div>
             </div>
           );
         })}
