@@ -59,6 +59,8 @@ The browser URL for episodes is `/_local/<base64url-encoded-relative-path>/episo
 
 - `src/app/api/local-datasets/route.ts` — `GET` returns the discovery JSON (datasets + integrity)
 - `src/app/api/local-datasets/[encodedPath]/[...filePath]/route.ts` — streams individual files with HTTP range support for video
+- `src/app/api/local-datasets/[encodedPath]/tags/route.ts` — `GET`/`PUT` the `meta/xense_tags.json` sidecar
+- `src/app/api/local-datasets/[encodedPath]/annotations/route.ts` — `GET`/`PUT` the `meta/lerobot_annotations.json` sidecar (`GET ?episode=N` returns one episode's atoms; `PUT` merges one episode and atomically rewrites the file)
 
 `buildVersionedUrl(repoId, version, path)` in `src/utils/versionUtils.ts` is now local-only and **throws** for non-local repoIds.
 
@@ -94,6 +96,7 @@ Episode entry pages call `probeDatasetHealth()` in `src/app/_local/[encodedPath]
 - Episode metadata can span **multiple chunks** (when episode count exceeds `chunks_size`). Always walk via the `iterateEpisodeMetadataFilesV3(repoId, version)` async generator in `fetch-data.ts` — it advances chunk-000 → chunk-001 → … and stops on the first missing `file-000`. Never hardcode `chunk-000`.
 - Multi-task episodes: episode-metadata rows carry a `tasks` field (`list[str]`) — prefer it over the legacy single `task_index` lookup. `EpisodeMetadataV3.tasks?: string[]` exposes it.
 - `meta/tasks.parquet` lookup: rows are **not** ordered by `task_index`, and the task string lives in a named pandas index (`__index_level_0__`). Always filter by the `task_index` **column** (`row.task_index === taskIndexNum`), never by row position.
+- **Language columns (v3.1)**: `loadEpisodeDataV3` always requests `language_persistent` / `language_events` in `v3DataColumns`. `hyparquet` silently ignores columns a dataset doesn't have, so this is safe for plain v3.0 datasets — `extractLanguageAtoms()` just returns `[]`. These columns are decoded as `list<struct<role,content,style,timestamp,camera,tool_calls>>`. See the Annotations section below.
 
 ### v2.x path construction
 
@@ -109,26 +112,45 @@ formatStringWithVars(info.data_path, {
 
 `formatStringWithVars` strips `:03d` format specifiers — padding must be done by the caller.
 
+### Annotations (v3.1 language schema)
+
+The **Annotations** tab edits lerobot's v3.1 language atoms (schema: [lerobot#3467](https://github.com/huggingface/lerobot/pull/3467)). This is a **local-only port** of upstream `lerobot-dataset-visualizer#108` — the upstream FastAPI backend and push-to-Hub/parquet-export path were **dropped**. Edits persist to a JSON sidecar only.
+
+- **Schema** (`src/types/language.types.ts`): a `LanguageAtom` is `{ role, content, style, timestamp, camera, tool_calls }`. Styles partition into **persistent** (`task_aug`/`subtask`/`plan`/`memory` → `language_persistent`, broadcast across all frames) vs **event** (`interjection`/`vqa` + speech where `style === null` → `language_events`, fired at one frame). `partitionAtoms()` / `columnForStyle()` route by style. VQA answers are JSON-stringified into `content` (`VqaBboxAnswer` / `VqaKeypointAnswer` / count / attribute / spatial). All helpers (`snapToFrame`, `activeAt`, `partitionAtoms`) are pure.
+- **Read path**: `extractLanguageAtoms()` in `fetch-data.ts` coerces the parquet `language_persistent`/`language_events` lists into `LanguageAtom[]` (persistent deduped from the first non-empty row; events collected per-row with the row `timestamp` as fallback). Exposed on `EpisodeData.languageAtoms` + `EpisodeData.frameTimestamps` (sorted, from the **full non-sampled** row set, used for snap-to-frame).
+- **State** (`src/context/annotations-context.tsx`): `AnnotationsProvider` holds per-episode atoms + draw state. `EpisodeBootstrap` (in `episode-viewer.tsx`) calls `setEpisode(episodeId, { repoId }, languageAtoms, frameTimestamps)`. **Hydration precedence: unsaved sessionStorage edits → JSON sidecar (`fetchEpisodeAtoms`) → parquet atoms.** sessionStorage is the live edit buffer; `save()` writes the sidecar.
+- **Persistence** (`src/utils/annotationsClient.ts`): rewritten to be local — derives the route from `getLocalDatasetFileBase(repoId)` and `PUT`s to `…/[encodedPath]/annotations`. `isAnnotateBackendEnabled()` always returns `true` (local write is always available); `fetchFrameTimestamps` is a no-op stub (timestamps come from the parquet). **There is no `NEXT_PUBLIC_ANNOTATE_BACKEND_URL` and no `backend/` directory** — do not reintroduce them.
+- **Sidecar** `meta/lerobot_annotations.json`: `{ version: 2, episodes: { "<id>": { atoms: [...] } }, updated_at }`. The route does read-modify-write of the whole file (preserving other episodes) with an atomic `tmp`+`rename`, mirroring the tags route.
+- **UI**: `annotations-panel.tsx` (quick-add + inspector; the upstream "Save dataset"/export and "backend offline" UI were removed), `annotations-timeline.tsx` (multi-track timeline), `video-overlay-canvas.tsx` (draw bbox/keypoint on a video → VQA atom). The overlay also mounts on the Episodes tab but is inert while `drawMode === "off"`.
+- **Not implemented (deferred Milestone B)**: writing atoms back into `data/chunk-*/file-*.parquet`. `hyparquet` is read-only; a local parquet write would need `hyparquet-writer` in a Node route. The JSON sidecar is the source of truth.
+
 ## Key files
 
-| File                                                              | Purpose                                                                                                                                  |
-| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/lib/local-datasets-discovery.ts`                             | Server-side scanner: walks the local root, returns datasets + `DatasetIntegrity`                                                         |
-| `src/app/page.tsx`                                                | Server component → calls `discoverLocalDatasets()` → renders `LocalDatasetGrid`                                                          |
-| `src/app/local-dataset-grid.tsx`                                  | Client grid: filter, health filter, "Open episode N" quick-jump, card with health badge                                                  |
-| `src/app/_local/[encodedPath]/[episode]/page.tsx`                 | Server health probe + `EpisodeViewer` mount (the only live entry into the viewer)                                                        |
-| `src/app/api/local-datasets/route.ts`                             | `GET /api/local-datasets` — discovery API for clients                                                                                    |
-| `src/app/api/local-datasets/[encodedPath]/[...filePath]/route.ts` | `GET`/`HEAD` for individual files, range-aware for video                                                                                 |
-| `src/app/[org]/[dataset]/[episode]/episode-viewer.tsx`            | Tabbed viewer (Episodes / 3D Replay / Statistics / Filtering / Frames / Action Insights)                                                 |
-| `src/app/[org]/[dataset]/[episode]/fetch-data.ts`                 | Main data-loading entry point; v2/v3 parsers; `computeColumnMinMax`                                                                      |
-| `src/components/urdf-viewer.tsx`                                  | 3D viewer; loads URDFs from the HF bucket; `autoMatchJoints` does column→joint mapping (supports `.pos`/`.position`/`.q` suffixes)       |
-| `src/utils/versionUtils.ts`                                       | `getDatasetInfo`, `getDatasetVersionAndInfo`, `buildVersionedUrl` (local-only)                                                           |
-| `src/utils/datasetRoute.ts`                                       | `local:` repoId wrapper, base64url encode, route ↔ repoId conversion                                                                     |
-| `src/utils/stringFormatting.ts`                                   | `buildV3DataPath`, `buildV3VideoPath`, `buildV3EpisodesMetadataPath`, padding helpers                                                    |
-| `src/utils/parquetUtils.ts`                                       | `fetchParquetFile`, `readParquetAsObjects`, `formatStringWithVars`                                                                       |
-| `src/utils/dataProcessing.ts`                                     | Chart grouping pipeline: `buildSuffixGroupsMap` → `computeGroupStats` → `groupByScale` → `flattenScaleGroups` → `processChartDataGroups` |
-| `src/utils/typeGuards.ts`                                         | `bigIntToNumber`, `isNumeric`, `isValidTaskIndex`, etc.                                                                                  |
-| `src/utils/constants.ts`                                          | `PADDING`, `EXCLUDED_COLUMNS`, `CHART_CONFIG`, `THRESHOLDS`                                                                              |
+| File                                                              | Purpose                                                                                                                                                  |
+| ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/lib/local-datasets-discovery.ts`                             | Server-side scanner: walks the local root, returns datasets + `DatasetIntegrity`                                                                         |
+| `src/app/page.tsx`                                                | Server component → calls `discoverLocalDatasets()` → renders `LocalDatasetGrid`                                                                          |
+| `src/app/local-dataset-grid.tsx`                                  | Client grid: filter, health filter, "Open episode N" quick-jump, card with health badge                                                                  |
+| `src/app/_local/[encodedPath]/[episode]/page.tsx`                 | Server health probe + `EpisodeViewer` mount (the only live entry into the viewer)                                                                        |
+| `src/app/api/local-datasets/route.ts`                             | `GET /api/local-datasets` — discovery API for clients                                                                                                    |
+| `src/app/api/local-datasets/[encodedPath]/[...filePath]/route.ts` | `GET`/`HEAD` for individual files, range-aware for video                                                                                                 |
+| `src/app/api/local-datasets/[encodedPath]/annotations/route.ts`   | `GET`/`PUT` the `meta/lerobot_annotations.json` annotation sidecar                                                                                       |
+| `src/app/[org]/[dataset]/[episode]/episode-viewer.tsx`            | Tabbed viewer (Episodes / Annotations / 3D Replay / Statistics / Filtering / Frames / Action Insights); hosts `AnnotationsProvider` + `EpisodeBootstrap` |
+| `src/app/[org]/[dataset]/[episode]/fetch-data.ts`                 | Main data-loading entry point; v2/v3 parsers; `computeColumnMinMax`; `extractLanguageAtoms`                                                              |
+| `src/types/language.types.ts`                                     | v3.1 language atom schema + pure helpers (`snapToFrame`, `activeAt`, `partitionAtoms`, VQA parsing)                                                      |
+| `src/context/annotations-context.tsx`                             | Per-episode annotation state; sessionStorage live buffer + sidecar hydration                                                                             |
+| `src/utils/annotationsClient.ts`                                  | Local-only persistence client → `…/[encodedPath]/annotations` route (no FastAPI backend)                                                                 |
+| `src/components/annotations-panel.tsx`                            | Annotations editor: quick-add bar, atom list, inspector, "Save episode"                                                                                  |
+| `src/components/annotations-timeline.tsx`                         | Multi-track atom timeline (one lane per kind, click-to-seek, drag spans)                                                                                 |
+| `src/components/video-overlay-canvas.tsx`                         | Draw bbox/keypoint on a video → grounded-VQA atom; inert when `drawMode === "off"`                                                                       |
+| `src/components/urdf-viewer.tsx`                                  | 3D viewer; loads URDFs from the HF bucket; `autoMatchJoints` does column→joint mapping (supports `.pos`/`.position`/`.q` suffixes)                       |
+| `src/utils/versionUtils.ts`                                       | `getDatasetInfo`, `getDatasetVersionAndInfo`, `buildVersionedUrl` (local-only)                                                                           |
+| `src/utils/datasetRoute.ts`                                       | `local:` repoId wrapper, base64url encode, route ↔ repoId conversion                                                                                     |
+| `src/utils/stringFormatting.ts`                                   | `buildV3DataPath`, `buildV3VideoPath`, `buildV3EpisodesMetadataPath`, padding helpers                                                                    |
+| `src/utils/parquetUtils.ts`                                       | `fetchParquetFile`, `readParquetAsObjects`, `formatStringWithVars`                                                                                       |
+| `src/utils/dataProcessing.ts`                                     | Chart grouping pipeline: `buildSuffixGroupsMap` → `computeGroupStats` → `groupByScale` → `flattenScaleGroups` → `processChartDataGroups`                 |
+| `src/utils/typeGuards.ts`                                         | `bigIntToNumber`, `isNumeric`, `isValidTaskIndex`, etc.                                                                                                  |
+| `src/utils/constants.ts`                                          | `PADDING`, `EXCLUDED_COLUMNS`, `CHART_CONFIG`, `THRESHOLDS`                                                                                              |
 
 ## Chart data pipeline
 

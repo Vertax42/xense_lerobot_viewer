@@ -10,6 +10,7 @@ This fork removes the Hugging Face Hub remote-loading path; everything reads fro
 - **Dataset health probing**: each dataset is scanned for `meta/info.json` + `data/` + `videos/` and classified as Healthy / Empty / Incomplete. The homepage shows red/amber card borders + corner badges for problem datasets; clicking an incomplete one opens a diagnostic page instead of failing on a missing file.
 - **Editable dataset tags** (task / scene / objects): annotate each dataset with a task category (`pick_and_place`, `peeling`, …), a scene (`tabletop`, `kitchen`, …), and a list of manipulated objects (`cucumber`, `box`, …). Tags persist as `meta/xense_tags.json` inside the dataset and power a task-based filter on the homepage. See [Tagging datasets](#tagging-datasets) below.
 - **Synchronized video + telemetry**: episode pages play all cameras side-by-side, synced to interactive Recharts time series for `observation.state`, `action`, and other signals.
+- **Language annotations editor** (lerobot v3.1 schema): an **Annotations** tab for authoring per-episode language atoms — subtasks, plans, memory, task rephrasings, interjections, robot speech, and VQA. Draw a bounding box or click a keypoint directly on any video for grounded VQA, arrange events on a multi-track timeline, and edit each atom in an inspector. Saves to `meta/lerobot_annotations.json` inside the dataset. See [Annotating episodes](#annotating-episodes) below.
 - **Statistics, Frames, Action Insights, Filtering** panels for dataset quality inspection — flagged episodes can be exported as a ready-to-run LeRobot CLI command.
 - **3D URDF replay** for SO-100, SO-101, and OpenArm bimanual robots, with auto-matched joint mapping that tolerates `.pos` / `.position` / `.q` column suffixes. URDF assets load from the public Hugging Face `lerobot/robot-urdfs` bucket.
 - **Per-card "Open episode N" shortcut**: jump straight to a specific episode from the homepage card.
@@ -140,9 +141,59 @@ The search box also matches against task / scene / object values, so typing `cuc
 
 `updated_at` is auto-stamped by the server on every save. Missing fields are treated as "unset" — an absent `xense_tags.json` is equivalent to all fields empty.
 
+## Annotating episodes
+
+The **Annotations** tab brings lerobot's v3.1 language schema ([lerobot#3467](https://github.com/huggingface/lerobot/pull/3467)) into the visualizer so you can author multi-modal language supervision next to the frames it describes. Each annotation is a _language atom_, split into two kinds:
+
+| Kind           | Styles                                  | Stored in             | Behavior                             |
+| -------------- | --------------------------------------- | --------------------- | ------------------------------------ |
+| **Persistent** | `task_aug`, `subtask`, `plan`, `memory` | `language_persistent` | Holds across the episode (broadcast) |
+| **Event**      | `interjection`, `vqa`, speech (`say`)   | `language_events`     | Fires at a specific frame timestamp  |
+
+What the tab gives you:
+
+- **Quick-add bar** for text atoms (subtask / plan / memory / task rephrasing / robot speech / non-spatial VQA).
+- **Grounded VQA** — drag a bounding box or click a keypoint directly on any video. The gesture becomes a `Where is the X?` / `Point to the X.` Q&A pair tied to the camera you drew on.
+- **Multi-track timeline** — one lane per atom kind; click to seek, drag a playhead, and drag-create / edge-resize subtask spans.
+- **Inspector** — select any atom to edit its content, timestamp (snapped to the nearest source frame), or camera tag.
+
+### How annotations are stored
+
+Saving writes a per-dataset JSON sidecar:
+
+```
+<LOCAL_DATASET_ROOT>/<org>/<dataset>/meta/lerobot_annotations.json
+```
+
+```json
+{
+  "version": 2,
+  "episodes": {
+    "0": {
+      "atoms": [
+        {
+          "role": "assistant",
+          "content": "pick up the box",
+          "style": "subtask",
+          "timestamp": 1.5,
+          "camera": null,
+          "tool_calls": null
+        }
+      ]
+    }
+  },
+  "updated_at": "2026-06-22T14:13:58.714Z"
+}
+```
+
+On load, atoms are read with this precedence: **unsaved in-session edits → the JSON sidecar → atoms already embedded in the parquet** (`language_persistent` / `language_events`). A dataset that ships with the columns renders immediately; a dataset without them starts blank.
+
+This fork is **local-only**: there is no FastAPI backend and no push-to-Hub. Writing annotations back into the dataset's `data/chunk-*/file-*.parquet` (the lerobot export path) is intentionally **not** implemented — the JSON sidecar is the source of truth, and the visualizer reads it directly. Because saving writes into the dataset's `meta/` directory, mount your dataset root **writable** (drop the `:ro` flag in the Docker examples below) if you want to persist edits.
+
 ## Architecture notes
 
 - Dataset files are served by an internal route `/api/local-datasets/[encodedPath]/[...filePath]` with HTTP range support for video streaming.
+- Dataset-level sidecars are read/written through dedicated routes: `…/[encodedPath]/tags` (`xense_tags.json`) and `…/[encodedPath]/annotations` (`lerobot_annotations.json`).
 - The homepage discovers datasets via `src/lib/local-datasets-discovery.ts`.
 - All cloud/HF Hub loading code (OAuth, proxy, search) has been removed.
 - URDF/mesh assets for the 3D replay still load from `https://huggingface.co/buckets/lerobot/robot-urdfs/` (override with `NEXT_PUBLIC_URDF_BASE_URL`).
